@@ -1,8 +1,8 @@
-# Boundary SDK Architecture
+# Architecture
 
 ## Overview
 
-Boundary is a TypeScript-first SDK that normalizes third-party API interactions through a unified request pipeline. Every request flows through the same sequence of steps, ensuring consistent behavior across all providers.
+Boundary normalizes third-party API interactions through a unified request pipeline. Every request flows through the same sequence of steps, ensuring consistent behavior across all providers.
 
 ## Core Components
 
