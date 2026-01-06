@@ -35,7 +35,34 @@ export class Boundary {
   private adapters: Map<string, ProviderAdapter> = new Map();
 
   constructor(config: BoundaryConfig, adapters?: Map<string, ProviderAdapter>) {
-    this.config = config;
+    // Normalize config: support both { providers: {...} } and { github: {...} } shapes
+    const providers = "providers" in config && config.providers
+      ? config.providers
+      : (() => {
+          // Extract provider configs from top-level keys (excluding known config keys)
+          const knownKeys = new Set([
+            "defaults",
+            "schemaValidation",
+            "observability",
+            "idempotency",
+            "providers",
+          ]);
+          const providerConfigs: Record<string, ProviderConfig> = {};
+          
+          for (const [key, value] of Object.entries(config)) {
+            if (!knownKeys.has(key) && value && typeof value === "object") {
+              providerConfigs[key] = value as ProviderConfig;
+            }
+          }
+          
+          return providerConfigs;
+        })();
+    
+    // Reconstruct normalized config
+    this.config = {
+      ...config,
+      providers,
+    };
     
     // Store adapters if provided
     if (adapters) {
@@ -43,19 +70,21 @@ export class Boundary {
     }
 
     // Setup observability
-    if (Array.isArray(config.observability)) {
-      this.observability = config.observability;
-    } else if (config.observability) {
-      this.observability = [config.observability];
+    if (Array.isArray(this.config.observability)) {
+      this.observability = this.config.observability;
+    } else if (this.config.observability) {
+      this.observability = [this.config.observability];
     } else {
       this.observability = [new ConsoleObservability()];
     }
 
     // Initialize providers
-    for (const [providerName, providerConfig] of Object.entries(
-      config.providers
-    )) {
-      this.initializeProvider(providerName, providerConfig);
+    if (this.config.providers) {
+      for (const [providerName, providerConfig] of Object.entries(
+        this.config.providers
+      )) {
+        this.initializeProvider(providerName, providerConfig);
+      }
     }
   }
 
@@ -198,6 +227,11 @@ export class Boundary {
   ): void {
     // Store adapter
     this.adapters.set(name, adapter);
+    
+    // Ensure providers object exists
+    if (!this.config.providers) {
+      this.config.providers = {};
+    }
     
     // Update config
     this.config.providers[name] = {

@@ -1,17 +1,28 @@
 {
-  "name": "@boundary/sdk",
-  "version": "1.0.0",
+  "name": "boundary-sdk",
+  "version": "1.0.1",
   "description": "API Normalization SDK - A TypeScript-first SDK that enforces a single stable contract across all third-party API providers",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
   "scripts": {
     "build": "tsc",
+    "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:watch": "vitest --watch",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "typecheck": "tsc --noEmit"
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "api",
@@ -21,8 +32,11 @@
     "rate-limiting",
     "retry"
   ],
-  "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Raghaverma/Boundary"
+  },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@types/node": "^20.14.0",
@@ -30,7 +44,7 @@
     "vitest": "^1.6.0"
   },
   "dependencies": {
+    "boundary-sdk": "^1.0.0",
     "zod": "^3.23.8"
   }
 }
-

@@ -25,6 +25,7 @@ import { GitHubAdapter } from "@boundary/sdk/providers/github";
 import { ConsoleObservability } from "@boundary/sdk/observability";
 import { FileSystemSchemaStorage } from "@boundary/sdk/validation";
 
+// Option 1: Nested providers structure (recommended for multiple providers)
 const boundary = new Boundary(
   {
     providers: {
@@ -44,6 +45,21 @@ const boundary = new Boundary(
         console.warn("Schema drift detected:", drifts);
       },
     },
+  },
+  new Map([["github", new GitHubAdapter()]])
+);
+
+// Option 2: Flat structure (convenient for single provider)
+const boundary2 = new Boundary(
+  {
+    github: {
+      auth: { token: process.env.GITHUB_TOKEN },
+      circuitBreaker: {
+        failureThreshold: 5,
+        timeout: 30000,
+      },
+    },
+    observability: new ConsoleObservability({ pretty: true }),
   },
   new Map([["github", new GitHubAdapter()]])
 );

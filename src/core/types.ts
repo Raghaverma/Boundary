@@ -299,7 +299,7 @@ export interface ProviderConfig {
 }
 
 export interface BoundaryConfig {
-  providers: Record<string, ProviderConfig>;
+  providers?: Record<string, ProviderConfig>;
   defaults?: {
     retry?: Partial<RetryConfig>;
     circuitBreaker?: Partial<CircuitBreakerConfig>;
@@ -317,6 +317,8 @@ export interface BoundaryConfig {
     defaultLevel: IdempotencyLevel;
     autoGenerateKeys?: boolean;
   };
+  // Allow provider configs at top level for convenience
+  [providerName: string]: unknown;
 }
 
 // ============================================================================
