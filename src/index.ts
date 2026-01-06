@@ -17,6 +17,12 @@ import { IdempotencyResolver } from "./strategies/idempotency.js";
 import { IdempotencyLevel } from "./core/types.js";
 import { ConsoleObservability } from "./observability/console.js";
 import type { ProviderAdapter } from "./core/types.js";
+import { GitHubAdapter } from "./providers/github/adapter.js";
+
+// Internal registry of built-in adapters (not exported)
+const BUILTIN_ADAPTERS = {
+  github: new GitHubAdapter(),
+} as const;
 
 export interface ProviderClient {
   get<T = unknown>(endpoint: string, options?: any): Promise<NormalizedResponse<T>>;
@@ -92,8 +98,16 @@ export class Boundary {
     providerName: string,
     providerConfig: ProviderConfig
   ): void {
-    // Get adapter from config, adapters map, or throw error
-    const adapter = providerConfig.adapter ?? this.adapters.get(providerName);
+    // Get adapter from config, adapters map, built-in adapters, or throw error
+    let adapter = providerConfig.adapter ?? this.adapters.get(providerName);
+    
+    // Auto-register built-in adapter if available
+    if (!adapter && providerName in BUILTIN_ADAPTERS) {
+      const builtinAdapter = BUILTIN_ADAPTERS[providerName as keyof typeof BUILTIN_ADAPTERS];
+      this.adapters.set(providerName, builtinAdapter);
+      adapter = builtinAdapter;
+    }
+    
     if (!adapter) {
       throw new Error(
         `No adapter found for provider: ${providerName}. Provide adapter in config or use registerProvider().`
@@ -249,5 +263,5 @@ export * from "./core/types.js";
 export * from "./observability/index.js";
 export * from "./strategies/index.js";
 export * from "./validation/index.js";
-export * from "./providers/github/index.js";
+// Note: Adapters are NOT exported - they are internal implementation details
 
