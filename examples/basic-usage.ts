@@ -1,0 +1,85 @@
+/**
+ * Basic usage example for Boundary SDK
+ */
+
+import { Boundary } from "../src/index.js";
+import { GitHubAdapter } from "../src/providers/github/index.js";
+import { ConsoleObservability } from "../src/observability/console.js";
+import { FileSystemSchemaStorage } from "../src/validation/schema-storage.js";
+
+async function main() {
+  // Initialize Boundary
+  const boundary = new Boundary(
+    {
+      providers: {
+        github: {
+          auth: {
+            token: process.env.GITHUB_TOKEN || "",
+          },
+          circuitBreaker: {
+            failureThreshold: 5,
+            timeout: 30000,
+            errorThresholdPercentage: 50,
+          },
+          rateLimit: {
+            tokensPerSecond: 10,
+            maxTokens: 100,
+            adaptiveBackoff: true,
+          },
+          retry: {
+            maxRetries: 3,
+            baseDelay: 1000,
+            maxDelay: 30000,
+            jitter: true,
+          },
+        },
+      },
+      defaults: {
+        timeout: 30000,
+      },
+      observability: new ConsoleObservability({ pretty: true }),
+      schemaValidation: {
+        enabled: true,
+        storage: new FileSystemSchemaStorage("./.boundary/schemas"),
+        onDrift: (drifts) => {
+          console.warn("Schema drift detected:", drifts);
+        },
+        strictMode: false,
+      },
+      idempotency: {
+        defaultLevel: "SAFE" as const,
+        autoGenerateKeys: true,
+      },
+    },
+    new Map([["github", new GitHubAdapter()]])
+  );
+
+  try {
+    // Make a GET request
+    console.log("Fetching user...");
+    const { data, meta } = await boundary.github.get("/users/octocat");
+    console.log("User data:", data);
+    console.log("Rate limit remaining:", meta.rateLimit.remaining);
+
+    // Check circuit breaker status
+    const status = boundary.getCircuitStatus("github");
+    console.log("Circuit breaker status:", status);
+
+    // Pagination example
+    console.log("\nFetching repositories with pagination...");
+    let count = 0;
+    for await (const response of boundary.github.paginate("/users/octocat/repos")) {
+      const repos = response.data as Array<{ name: string }>;
+      console.log(`Page ${++count}: ${repos.length} repos`);
+      if (count >= 3) break; // Limit to 3 pages for demo
+    }
+  } catch (error) {
+    console.error("Error:", error);
+    if ("type" in error && error.type === "CIRCUIT_OPEN") {
+      console.log("Circuit is open, retry after:", (error as any).retryAfter);
+    }
+  }
+}
+
+main().catch(console.error);
+
