@@ -198,7 +198,26 @@ interface NormalizedResponse<T> {
 }
 ```
 
-## NormalizedError
+## BoundaryError
+
+```typescript
+interface BoundaryError extends Error {
+  category: BoundaryErrorCategory;
+  retryable: boolean;
+  provider: string;
+  message: string;
+  metadata?: Record<string, unknown>;
+  retryAfter?: Date;
+}
+```
+
+Error categories: `"auth" | "rate_limit" | "network" | "provider" | "validation"`
+
+**Stability**: Stable. Error categories will not change within a major version.
+
+**Note**: Provider-specific error details are normalized into these categories. Applications should not branch on provider-specific error codes or structures. See `PROVIDER_GUIDE.md` for adapter implementation details.
+
+## NormalizedError (Deprecated)
 
 ```typescript
 interface NormalizedError extends Error {
@@ -211,7 +230,7 @@ interface NormalizedError extends Error {
 }
 ```
 
-Error types: `"AUTH_ERROR" | "RATE_LIMIT" | "VALIDATION_ERROR" | "PROVIDER_ERROR" | "NETWORK_ERROR" | "CIRCUIT_OPEN"`
+**Status**: Deprecated. Use `BoundaryError` instead. This type is kept for backward compatibility during migration.
 
 ## CircuitBreakerStatus
 
@@ -227,6 +246,26 @@ interface CircuitBreakerStatus {
 
 Circuit states: `"CLOSED" | "OPEN" | "HALF_OPEN"`
 
+## Provider Adapter Contract
+
+The `ProviderAdapter` interface is the authoritative contract for all adapters:
+
+```typescript
+interface ProviderAdapter {
+  buildRequest(input: AdapterInput): BuiltRequest;
+  parseResponse(raw: RawResponse): NormalizedResponse;
+  parseError(raw: unknown): BoundaryError;
+  authStrategy(config: AuthConfig): Promise<AuthToken>;
+  rateLimitPolicy(headers: Headers): RateLimitInfo;
+  paginationStrategy(): PaginationStrategy;
+  getIdempotencyConfig(): IdempotencyConfig;
+}
+```
+
+**Stability**: Stable. This contract will not change in breaking ways within the same major version.
+
+**Note**: This is the public contract. Implementation details (how adapters normalize provider-specific behavior) are internal. See `PROVIDER_GUIDE.md` for adapter implementation guidance.
+
 ## Stability Guarantees
 
 - **Stable**: API will not change in breaking ways within the same major version
@@ -234,4 +273,11 @@ Circuit states: `"CLOSED" | "OPEN" | "HALF_OPEN"`
 - **Deprecated**: API will be removed in next major version
 
 All documented APIs are marked as stable unless otherwise noted.
+
+**Provider-Specific Details**: Boundary's public API does not expose provider-specific details. All provider quirks are normalized by adapters. If you need provider-specific behavior, you should either:
+1. Extend the adapter to normalize it into Boundary's canonical forms
+2. Accept that the behavior cannot be normalized and handle it outside Boundary
+
+See `PROVIDER_GUIDE.md` for guidance on when normalization is appropriate.
+
 

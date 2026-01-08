@@ -11,9 +11,9 @@ import type {
   RequestContext,
   ResponseContext,
   ErrorContext,
+  RawResponse,
+  BoundaryError,
 } from "./types.js";
-import { ErrorMapper } from "./error-mapper.js";
-import { ResponseNormalizer } from "./normalizer.js";
 import { ProviderCircuitBreaker } from "../strategies/circuit-breaker.js";
 import { RateLimiter } from "../strategies/rate-limit.js";
 import { RetryStrategy } from "../strategies/retry.js";
@@ -77,8 +77,8 @@ export class RequestPipeline {
     }
 
     try {
-      // Step 1: Authenticate
-      const authToken = await this.config.adapter.authenticate(
+      // Step 1: Authenticate using adapter's auth strategy
+      const authToken = await this.config.adapter.authStrategy(
         this.config.authConfig
       );
 
@@ -89,8 +89,8 @@ export class RequestPipeline {
       const response = await this.config.retryStrategy.execute(
         async () => {
           return await this.config.circuitBreaker.execute(async () => {
-            // Step 5: Fetch
-            return await this.fetchWithTimeout(
+            // Step 5: Build request and execute HTTP
+            return await this.executeHttpRequest(
               endpoint,
               options,
               authToken
@@ -101,8 +101,8 @@ export class RequestPipeline {
         !!options.idempotencyKey
       );
 
-      // Step 6: Parse rate limit from response
-      const rateLimitInfo = this.config.adapter.parseRateLimit(
+      // Step 6: Parse rate limit from response using adapter's policy
+      const rateLimitInfo = this.config.adapter.rateLimitPolicy(
         response.headers
       );
       this.config.rateLimiter.updateFromHeaders(
@@ -110,22 +110,8 @@ export class RequestPipeline {
         rateLimitInfo
       );
 
-      // Step 7: Normalize response
-      const paginationStrategy = this.config.adapter.getPaginationStrategy();
-      const paginationInfo = ResponseNormalizer.extractPaginationInfo(
-        response,
-        paginationStrategy
-      );
-
-      const normalized = this.config.adapter.normalizeResponse(response);
-      const normalizedWithMeta = ResponseNormalizer.normalize(
-        response,
-        this.config.provider,
-        rateLimitInfo,
-        paginationInfo,
-        normalized.meta.warnings,
-        normalized.meta.schemaVersion
-      );
+      // Step 7: Parse response using adapter's parseResponse
+      const normalized = this.config.adapter.parseResponse(response);
 
       // Step 8: Schema check (if enabled, handled by adapter)
       // This would be done in the adapter's normalizeResponse method
@@ -166,25 +152,25 @@ export class RequestPipeline {
         });
       }
 
-      return normalizedWithMeta as NormalizedResponse<T>;
+      return normalized as NormalizedResponse<T>;
     } catch (error) {
       const duration = Date.now() - startTime;
 
-      // Step 8: Error mapping
-      const normalizedError = ErrorMapper.normalize(
-        error,
-        this.config.provider,
-        "An error occurred during the request"
-      );
+      // Step 8: Parse error using adapter's parseError
+      // This is the ONLY place errors are normalized - adapter handles all provider-specific logic
+      const boundaryError = this.config.adapter.parseError(error);
 
-      // Handle 429 rate limit errors
-      if (normalizedError.type === "RATE_LIMIT" && normalizedError.retryAfter) {
+      // Handle rate limit errors - update rate limiter
+      if (boundaryError.category === "rate_limit" && boundaryError.retryAfter) {
         this.config.rateLimiter.handle429(
           Math.floor(
-            (normalizedError.retryAfter.getTime() - Date.now()) / 1000
+            (boundaryError.retryAfter.getTime() - Date.now()) / 1000
           )
         );
       }
+
+      // Convert BoundaryError to NormalizedError for observability (backward compat)
+      const normalizedError = this.boundaryErrorToNormalizedError(boundaryError);
 
       const errorContext: ErrorContext = {
         provider: this.config.provider,
@@ -205,25 +191,89 @@ export class RequestPipeline {
           tags: {
             provider: this.config.provider,
             endpoint,
-            errorType: normalizedError.type,
+            errorType: this.mapCategoryToErrorType(boundaryError.category),
           },
           timestamp: new Date(),
         });
       }
 
-      throw normalizedError;
+      throw boundaryError;
     }
   }
 
-  private async fetchWithTimeout(
+  /**
+   * Executes HTTP request using adapter's buildRequest and fetch.
+   * This is the ONLY place HTTP execution happens - adapters only build requests.
+   */
+  private async executeHttpRequest(
     endpoint: string,
     options: RequestOptions,
     authToken: any
-  ): Promise<any> {
+  ): Promise<RawResponse> {
     const timeout = this.config.timeout ?? 30000;
 
+    // Build request using adapter
+    const builtRequest = this.config.adapter.buildRequest({
+      endpoint,
+      options,
+      authToken,
+    });
+
+    // Execute HTTP request
+    const fetchOptions: RequestInit = {
+      method: builtRequest.method,
+      headers: builtRequest.headers,
+    };
+    if (builtRequest.body !== undefined) {
+      fetchOptions.body = builtRequest.body;
+    }
+    
+    const fetchPromise = fetch(builtRequest.url, fetchOptions).then(async (response) => {
+      // Parse response body
+      let body: unknown;
+      try {
+        const contentType = response.headers.get("content-type");
+        if (contentType?.includes("application/json")) {
+          body = await response.json();
+        } else {
+          body = await response.text();
+        }
+      } catch {
+        body = {};
+      }
+
+      // Convert Headers to Headers object
+      const headersMap = new Headers();
+      response.headers.forEach((value, key) => {
+        headersMap.set(key, value);
+      });
+
+      // If error status, throw error object for adapter to parse
+      if (!response.ok) {
+        throw {
+          status: response.status,
+          headers: headersMap,
+          body,
+        };
+      }
+
+      return {
+        status: response.status,
+        headers: headersMap,
+        body,
+      } as RawResponse;
+    }).catch((error) => {
+      // Wrap network errors for adapter to parse
+      if (error instanceof Error) {
+        throw error;
+      }
+      // HTTP error responses are already thrown above
+      throw error;
+    });
+
+    // Apply timeout
     return Promise.race([
-      this.config.adapter.makeRequest(endpoint, options, authToken),
+      fetchPromise,
       new Promise<never>((_, reject) =>
         setTimeout(
           () => reject(new Error("Request timeout")),
@@ -231,6 +281,49 @@ export class RequestPipeline {
         )
       ),
     ]);
+  }
+
+  /**
+   * Converts BoundaryError to NormalizedError for backward compatibility.
+   * @deprecated This is temporary during migration
+   */
+  private boundaryErrorToNormalizedError(
+    error: BoundaryError
+  ): import("./types.js").NormalizedError {
+    const normalized = new Error(error.message) as import("./types.js").NormalizedError;
+    normalized.type = this.mapCategoryToErrorType(error.category);
+    normalized.provider = error.provider;
+    normalized.actionable = error.message;
+    normalized.retryable = error.retryable;
+    if (error.retryAfter !== undefined) {
+      normalized.retryAfter = error.retryAfter;
+    }
+    normalized.raw = error.metadata;
+    normalized.name = normalized.type;
+    return normalized;
+  }
+
+  /**
+   * Maps BoundaryError category to legacy ErrorType.
+   * @deprecated This is temporary during migration
+   */
+  private mapCategoryToErrorType(
+    category: BoundaryError["category"]
+  ): import("./types.js").ErrorType {
+    switch (category) {
+      case "auth":
+        return "AUTH_ERROR";
+      case "rate_limit":
+        return "RATE_LIMIT";
+      case "validation":
+        return "VALIDATION_ERROR";
+      case "provider":
+        return "PROVIDER_ERROR";
+      case "network":
+        return "NETWORK_ERROR";
+      default:
+        return "PROVIDER_ERROR";
+    }
   }
 }
 

@@ -26,19 +26,41 @@ Each step is responsible for a specific concern:
 
 ### 2. Provider Adapters (`src/providers/`)
 
-Each provider implements the `ProviderAdapter` interface:
+Each provider implements the `ProviderAdapter` interface. This is the **authoritative contract** that all adapters must satisfy.
 
 ```typescript
 interface ProviderAdapter {
-  authenticate(config: AuthConfig): Promise<AuthToken>
-  makeRequest(endpoint: string, options: RequestOptions, authToken: AuthToken): Promise<RawResponse>
-  normalizeResponse(raw: RawResponse): NormalizedResponse
-  parseRateLimit(headers: Headers): RateLimitInfo
-  parseError(error: unknown): NormalizedError
-  getPaginationStrategy(): PaginationStrategy
+  buildRequest(input: AdapterInput): BuiltRequest
+  parseResponse(raw: RawResponse): NormalizedResponse
+  parseError(raw: unknown): BoundaryError
+  authStrategy(config: AuthConfig): Promise<AuthToken>
+  rateLimitPolicy(headers: Headers): RateLimitInfo
+  paginationStrategy(): PaginationStrategy
   getIdempotencyConfig(): IdempotencyConfig
 }
 ```
+
+#### Why This Contract Exists
+
+**The adapter contract is behavior-focused, not data-focused.** This separation is critical:
+
+1. **Zero Provider Quirk Leakage**: Adapters MUST normalize all provider-specific behavior. Core code MUST NOT branch on provider semantics. If a provider does something unusual (e.g., GitHub's overloaded 404), the adapter handles it, not core.
+
+2. **Explicit Rejection of Non-Normalizable Behavior**: If something cannot be normalized cleanly, it MUST fail loudly. We do not add convenience abstractions that hide provider quirks. We do not reduce adapter verbosity to make adapters "easier" to write.
+
+3. **Strict Separation of Concerns**: 
+   - Adapters build requests and parse responses/errors
+   - Pipeline executes HTTP and orchestrates flow
+   - Core never knows about provider-specific details
+
+4. **Compile-Time Safety**: The contract is enforced by TypeScript. If an adapter cannot satisfy it, it will not compile. Runtime validation (`adapter-validator.ts`) provides additional checks.
+
+#### Constraints (Non-Negotiable)
+
+- **Do not add convenience abstractions**: Every provider quirk must be explicitly handled in the adapter
+- **Do not reduce adapter verbosity**: Adapters should be explicit about what they're doing
+- **Do not add provider-specific conditionals in core**: If core needs to branch on provider, the adapter is wrong
+- **If something cannot be normalized cleanly, it must fail loudly**: Better to fail than to leak provider semantics
 
 ### 3. Resilience Strategies (`src/strategies/`)
 
@@ -208,6 +230,25 @@ Schema storage is pluggable to support different deployment models (serverless v
 ### Provider-Scoped Versioning
 
 Each provider can have its own version, allowing independent evolution while keeping the core SDK stable.
+
+### Canonical Error Model
+
+Boundary uses a strict canonical error model (`BoundaryError`) with five categories: `auth`, `rate_limit`, `network`, `provider`, `validation`. 
+
+**Why this constraint exists**: Applications should not need to branch on provider-specific error codes or structures. If GitHub returns a 404 for "not found" and Stripe returns a 404 for "resource doesn't exist", both map to `validation` category. The adapter's `parseError` method is the ONLY place provider error semantics are handled.
+
+**Tradeoff**: This requires adapters to be explicit about error mapping. Some providers have ambiguous errors (e.g., GitHub's 404 can mean "not found" OR "no access"). Adapters must disambiguate these cases explicitly. This verbosity is intentional - it makes provider quirks visible and forces explicit handling.
+
+### Request Building Separation
+
+Adapters build requests (`buildRequest`), but the pipeline executes HTTP. This separation ensures:
+- Adapters focus on provider-specific request construction
+- Pipeline handles HTTP concerns (timeouts, retries, circuit breaking)
+- Core never needs to know about provider-specific headers or URL formats
+
+**Why this constraint exists**: Mixing request building with HTTP execution makes it harder to test adapters and creates tight coupling. By separating concerns, we can test adapters without making real HTTP requests.
+
+**Tradeoff**: Adapters cannot directly control HTTP execution (e.g., custom fetch options). If a provider requires non-standard HTTP behavior, it must be handled in the adapter's request building, not in execution.
 
 ## Testing Strategy
 

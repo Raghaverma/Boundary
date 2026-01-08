@@ -191,7 +191,7 @@ export class Boundary {
       let currentOptions = { ...options, method: "GET" as const };
       let hasNext = true;
 
-      const paginationStrategy = adapter.getPaginationStrategy();
+      const paginationStrategy = adapter.paginationStrategy();
 
       while (hasNext) {
         const response = await makeRequest<T>("GET", currentEndpoint, currentOptions);
