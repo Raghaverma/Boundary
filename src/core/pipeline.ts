@@ -20,7 +20,7 @@ import { RetryStrategy } from "../strategies/retry.js";
 import { IdempotencyResolver } from "../strategies/idempotency.js";
 import { randomUUID } from "crypto";
 
-import type { AuthConfig } from "./types.js";
+import type { AuthConfig, AuthToken } from "./types.js";
 
 export interface PipelineConfig {
   provider: string;
@@ -158,7 +158,23 @@ export class RequestPipeline {
 
       // Step 8: Parse error using adapter's parseError
       // This is the ONLY place errors are normalized - adapter handles all provider-specific logic
-      const boundaryError = this.config.adapter.parseError(error);
+      let boundaryError: BoundaryError;
+      try {
+        boundaryError = this.config.adapter.parseError(error);
+      } catch (parseError) {
+        // Adapter failed to parse error - create generic fallback
+        boundaryError = {
+          name: "BoundaryError",
+          message: error instanceof Error ? error.message : String(error),
+          category: "provider" as const,
+          retryable: false,
+          provider: this.config.provider,
+          metadata: {
+            originalError: error instanceof Error ? error.message : error,
+            parseError: parseError instanceof Error ? parseError.message : parseError,
+          },
+        };
+      }
 
       // Handle rate limit errors - update rate limiter
       if (boundaryError.category === "rate_limit" && boundaryError.retryAfter) {
@@ -208,7 +224,7 @@ export class RequestPipeline {
   private async executeHttpRequest(
     endpoint: string,
     options: RequestOptions,
-    authToken: any
+    authToken: AuthToken
   ): Promise<RawResponse> {
     const timeout = this.config.timeout ?? 30000;
 
@@ -219,16 +235,23 @@ export class RequestPipeline {
       authToken,
     });
 
+    // Use AbortController for proper timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
     // Execute HTTP request
     const fetchOptions: RequestInit = {
       method: builtRequest.method,
       headers: builtRequest.headers,
+      signal: controller.signal,
     };
     if (builtRequest.body !== undefined) {
       fetchOptions.body = builtRequest.body;
     }
-    
-    const fetchPromise = fetch(builtRequest.url, fetchOptions).then(async (response) => {
+
+    try {
+      const response = await fetch(builtRequest.url, fetchOptions);
+
       // Parse response body
       let body: unknown;
       try {
@@ -262,25 +285,15 @@ export class RequestPipeline {
         headers: headersMap,
         body,
       } as RawResponse;
-    }).catch((error) => {
-      // Wrap network errors for adapter to parse
-      if (error instanceof Error) {
-        throw error;
+    } catch (error) {
+      // Convert abort error to timeout error
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error("Request timeout");
       }
-      // HTTP error responses are already thrown above
       throw error;
-    });
-
-    // Apply timeout
-    return Promise.race([
-      fetchPromise,
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error("Request timeout")),
-          timeout
-        )
-      ),
-    ]);
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   /**

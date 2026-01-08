@@ -28,7 +28,7 @@ import type {
 import { IdempotencyLevel } from "../../core/types.js";
 import { GitHubPaginationStrategy } from "./pagination.js";
 import { ResponseNormalizer } from "../../core/normalizer.js";
-import { assertValidAdapter } from "../../core/adapter-validator.js";
+import { validateAdapter } from "../../core/adapter-validator.js";
 
 /**
  * GitHub API error response structure.
@@ -58,12 +58,24 @@ export class GitHubAdapter implements ProviderAdapter {
 
   constructor(baseUrl: string = "https://api.github.com") {
     this.baseUrl = baseUrl;
-    
+
     // Validate adapter implementation at construction time
     // This fails fast if the adapter doesn't meet the contract
-    // In production, this could be disabled for performance
-    if (process.env.NODE_ENV !== "production") {
-      assertValidAdapter(this, "github");
+    const result = validateAdapter(this, "github");
+    if (!result.valid) {
+      const errorMessage = `Adapter validation failed for 'github':\n${result.errors.map((e) => `  - ${e}`).join("\n")}`;
+      if (process.env.NODE_ENV === "production") {
+        // In production, log warning but don't crash
+        console.warn(errorMessage);
+      } else {
+        // In development, fail fast
+        throw new Error(errorMessage);
+      }
+    }
+    if (result.warnings.length > 0) {
+      console.warn(
+        `Adapter validation warnings for 'github':\n${result.warnings.map((w) => `  - ${w}`).join("\n")}`
+      );
     }
   }
 
@@ -241,8 +253,9 @@ export class GitHubAdapter implements ProviderAdapter {
     // 403 Forbidden - Could be permission OR rate limit
     if (status === 403) {
       // Check if this is actually a rate limit (GitHub sometimes returns 403 for rate limits)
+      // Only treat as rate limit if X-RateLimit-Remaining is explicitly "0"
       const rateLimitRemaining = this.getHeaderValue(headers, "X-RateLimit-Remaining");
-      if (rateLimitRemaining === "0" || rateLimitRemaining === null) {
+      if (rateLimitRemaining === "0") {
         const retryAfter = this.extractRetryAfter(headers);
         return this.createBoundaryError(
           "rate_limit",

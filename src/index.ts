@@ -41,6 +41,9 @@ export class Boundary {
   private adapters: Map<string, ProviderAdapter> = new Map();
 
   constructor(config: BoundaryConfig, adapters?: Map<string, ProviderAdapter>) {
+    // Validate configuration
+    this.validateConfig(config);
+
     // Normalize config: support both { providers: {...} } and { github: {...} } shapes
     const providers = "providers" in config && config.providers
       ? config.providers
@@ -91,6 +94,61 @@ export class Boundary {
       )) {
         this.initializeProvider(providerName, providerConfig);
       }
+    }
+  }
+
+  private validateConfig(config: BoundaryConfig): void {
+    const errors: string[] = [];
+
+    // Validate default rate limit config
+    if (config.defaults?.rateLimit) {
+      const { tokensPerSecond, maxTokens, queueSize } = config.defaults.rateLimit;
+      if (tokensPerSecond !== undefined && tokensPerSecond <= 0) {
+        errors.push("defaults.rateLimit.tokensPerSecond must be positive");
+      }
+      if (maxTokens !== undefined && maxTokens <= 0) {
+        errors.push("defaults.rateLimit.maxTokens must be positive");
+      }
+      if (queueSize !== undefined && queueSize <= 0) {
+        errors.push("defaults.rateLimit.queueSize must be positive");
+      }
+    }
+
+    // Validate default retry config
+    if (config.defaults?.retry) {
+      const { maxRetries, baseDelay, maxDelay } = config.defaults.retry;
+      if (maxRetries !== undefined && maxRetries < 0) {
+        errors.push("defaults.retry.maxRetries must be non-negative");
+      }
+      if (baseDelay !== undefined && baseDelay <= 0) {
+        errors.push("defaults.retry.baseDelay must be positive");
+      }
+      if (maxDelay !== undefined && maxDelay <= 0) {
+        errors.push("defaults.retry.maxDelay must be positive");
+      }
+    }
+
+    // Validate default circuit breaker config
+    if (config.defaults?.circuitBreaker) {
+      const { failureThreshold, timeout, successThreshold } = config.defaults.circuitBreaker;
+      if (failureThreshold !== undefined && failureThreshold <= 0) {
+        errors.push("defaults.circuitBreaker.failureThreshold must be positive");
+      }
+      if (timeout !== undefined && timeout <= 0) {
+        errors.push("defaults.circuitBreaker.timeout must be positive");
+      }
+      if (successThreshold !== undefined && successThreshold <= 0) {
+        errors.push("defaults.circuitBreaker.successThreshold must be positive");
+      }
+    }
+
+    // Validate default timeout
+    if (config.defaults?.timeout !== undefined && config.defaults.timeout <= 0) {
+      errors.push("defaults.timeout must be positive");
+    }
+
+    if (errors.length > 0) {
+      throw new Error(`Invalid Boundary configuration:\n  - ${errors.join("\n  - ")}`);
     }
   }
 

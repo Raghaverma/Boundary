@@ -1,0 +1,35 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`GitHub Adapter - Contract Tests > parseError - Canonical Error Categories > should map 401 to auth category 1`] = `
+{
+  "category": "auth",
+  "hasMetadata": true,
+  "message": "Authentication failed. Check your token is valid and not expired.",
+  "provider": "github",
+  "retryable": false,
+}
+`;
+
+exports[`GitHub Adapter - Contract Tests > parseResponse - Normalized Response Shape > should normalize successful response with correct structure 1`] = `
+{
+  "data": {
+    "id": 1,
+    "login": "octocat",
+  },
+  "meta": {
+    "pagination": {
+      "cursor": "2",
+      "hasNext": true,
+    },
+    "provider": "github",
+    "rateLimit": {
+      "limit": 5000,
+      "remaining": 4999,
+      "reset": 2026-01-08T23:28:22.000Z,
+    },
+    "requestId": "26fae9e9-6be0-43a4-8043-c6795b514879",
+    "schemaVersion": "1.0.0",
+    "warnings": [],
+  },
+}
+`;
