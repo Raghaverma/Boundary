@@ -60,9 +60,8 @@ export class ConsoleObservability implements ObservabilityAdapter {
       method: context.method,
       requestId: context.requestId,
       error: {
-        type: context.error.type,
+        category: context.error.category,
         message: context.error.message,
-        actionable: context.error.actionable,
         retryable: context.error.retryable,
         retryAfter: context.error.retryAfter?.toISOString(),
       },

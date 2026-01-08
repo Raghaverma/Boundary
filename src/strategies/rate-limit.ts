@@ -46,7 +46,8 @@ export class RateLimiter {
 
   private refill(): void {
     const now = Date.now();
-    const elapsed = (now - this.lastRefill) / 1000; // Convert to seconds
+    // Clamp elapsed to >= 0 to handle future lastRefill (set by handle429)
+    const elapsed = Math.max(0, (now - this.lastRefill) / 1000);
     const tokensToAdd = elapsed * this.config.tokensPerSecond;
 
     if (tokensToAdd > 0) {

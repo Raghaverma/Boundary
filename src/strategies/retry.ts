@@ -1,26 +1,31 @@
 /**
  * Retry logic with exponential backoff and idempotency awareness
+ *
+ * POLICY INVERSION (Safety-first):
+ * - Default: NO retry (maxRetries = 0)
+ * - Retry ONLY if BOTH conditions are met:
+ *   1. Error is EXPLICITLY marked as retryable
+ *   2. Idempotency is PROVEN (SAFE, IDEMPOTENT, or CONDITIONAL with key)
  */
 
-import type { RetryConfig, NormalizedError } from "../core/types.js";
+import type { RetryConfig } from "../core/types.js";
 import { IdempotencyLevel } from "../core/types.js";
-import { IdempotencyResolver } from "./idempotency.js";
+import type { IdempotencyResolver } from "./idempotency.js";
 
 export class RetryStrategy {
   private config: Required<RetryConfig>;
-  private idempotencyResolver: IdempotencyResolver;
 
   constructor(
     config: Partial<RetryConfig> = {},
-    idempotencyResolver: IdempotencyResolver
+    _idempotencyResolver: IdempotencyResolver // Kept for API compatibility
   ) {
     this.config = {
-      maxRetries: config.maxRetries ?? 3,
+      // POLICY INVERSION: Default to NO retry for safety
+      maxRetries: config.maxRetries ?? 0,
       baseDelay: config.baseDelay ?? 1000,
       maxDelay: config.maxDelay ?? 30000,
       jitter: config.jitter ?? true,
     };
-    this.idempotencyResolver = idempotencyResolver;
   }
 
   async execute<T>(
@@ -32,25 +37,19 @@ export class RetryStrategy {
     try {
       return await fn();
     } catch (error) {
+      // POLICY INVERSION: Both conditions must be met for retry
+      // 1. Max retries not exceeded
       if (attempt >= this.config.maxRetries) {
         throw error;
       }
 
-      // Check if we should retry based on idempotency level
-      const shouldRetry = this.idempotencyResolver.shouldRetry(
-        idempotencyLevel,
-        error as Error,
-        attempt,
-        this.config.maxRetries,
-        hasIdempotencyKey
-      );
-
-      if (!shouldRetry) {
+      // 2. Error MUST be explicitly marked as retryable
+      if (!this.isExplicitlyRetryable(error)) {
         throw error;
       }
 
-      // Check if error is retryable
-      if (!this.isRetryableError(error)) {
+      // 3. Idempotency MUST be proven (SAFE, IDEMPOTENT, or CONDITIONAL with key)
+      if (!this.isIdempotencyProven(idempotencyLevel, hasIdempotencyKey)) {
         throw error;
       }
 
@@ -65,25 +64,38 @@ export class RetryStrategy {
     }
   }
 
-  private isRetryableError(error: unknown): boolean {
-    if (error instanceof Error) {
-      // Network errors
-      if (
-        error.message.includes("ECONNRESET") ||
-        error.message.includes("ETIMEDOUT") ||
-        error.message.includes("ENOTFOUND")
-      ) {
-        return true;
-      }
-
-      // Normalized errors
-      if ("retryable" in error) {
-        const normalizedError = error as NormalizedError;
-        return normalizedError.retryable;
-      }
+  /**
+   * Checks if error is EXPLICITLY marked as retryable.
+   * POLICY: Do not infer retryability - require explicit marking.
+   */
+  private isExplicitlyRetryable(error: unknown): boolean {
+    // Error MUST have explicit retryable property set to true
+    if (error && typeof error === "object" && "retryable" in error) {
+      return (error as { retryable: boolean }).retryable === true;
     }
 
+    // No explicit retryable flag = not retryable
     return false;
+  }
+
+  /**
+   * Checks if idempotency is proven for safe retry.
+   */
+  private isIdempotencyProven(
+    idempotencyLevel: IdempotencyLevel,
+    hasIdempotencyKey: boolean
+  ): boolean {
+    switch (idempotencyLevel) {
+      case IdempotencyLevel.SAFE:
+      case IdempotencyLevel.IDEMPOTENT:
+        return true;
+      case IdempotencyLevel.CONDITIONAL:
+        return hasIdempotencyKey;
+      case IdempotencyLevel.UNSAFE:
+        return false;
+      default:
+        return false;
+    }
   }
 
   private calculateDelay(attempt: number): number {

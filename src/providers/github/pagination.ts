@@ -3,6 +3,7 @@
  */
 
 import type { PaginationStrategy, RawResponse, RequestOptions } from "../../core/types.js";
+import { parseLinkHeader, findLinkByRel } from "../../core/header-parser.js";
 
 export class GitHubPaginationStrategy implements PaginationStrategy {
   extractCursor(response: RawResponse): string | null {
@@ -11,18 +12,23 @@ export class GitHubPaginationStrategy implements PaginationStrategy {
       return null;
     }
 
-    // Parse Link header: <https://api.github.com/user/repos?page=2>; rel="next"
-    const links = this.parseLinkHeader(linkHeader);
-    const nextLink = links.find((link) => link.rel === "next");
+    // Use hardened Link header parser
+    const links = parseLinkHeader(linkHeader);
+    const nextLink = findLinkByRel(links, "next");
 
     if (!nextLink) {
       return null;
     }
 
-    // Extract page number from URL
-    const url = new URL(nextLink.url);
-    const page = url.searchParams.get("page");
-    return page;
+    // Extract page number from URL safely
+    try {
+      const url = new URL(nextLink.url);
+      const page = url.searchParams.get("page");
+      return page;
+    } catch {
+      // Invalid URL - return null
+      return null;
+    }
   }
 
   extractTotal(response: RawResponse): number | null {
@@ -30,7 +36,11 @@ export class GitHubPaginationStrategy implements PaginationStrategy {
     // Some endpoints use X-Total-Count header
     const totalHeader = response.headers.get("X-Total-Count");
     if (totalHeader) {
-      return parseInt(totalHeader, 10);
+      const parsed = parseInt(totalHeader, 10);
+      // Validate the parsed value
+      if (!isNaN(parsed) && parsed >= 0 && parsed <= Number.MAX_SAFE_INTEGER) {
+        return parsed;
+      }
     }
 
     return null;
@@ -42,8 +52,8 @@ export class GitHubPaginationStrategy implements PaginationStrategy {
       return false;
     }
 
-    const links = this.parseLinkHeader(linkHeader);
-    return links.some((link) => link.rel === "next");
+    const links = parseLinkHeader(linkHeader);
+    return findLinkByRel(links, "next") !== null;
   }
 
   buildNextRequest(
@@ -61,23 +71,6 @@ export class GitHubPaginationStrategy implements PaginationStrategy {
         },
       },
     };
-  }
-
-  private parseLinkHeader(linkHeader: string): Array<{ url: string; rel: string }> {
-    const links: Array<{ url: string; rel: string }> = [];
-    const parts = linkHeader.split(",");
-
-    for (const part of parts) {
-      const match = part.match(/<([^>]+)>;\s*rel="([^"]+)"/);
-      if (match) {
-        links.push({
-          url: match[1]!,
-          rel: match[2]!,
-        });
-      }
-    }
-
-    return links;
   }
 }
 

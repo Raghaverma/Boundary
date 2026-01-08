@@ -18,6 +18,7 @@ import { ProviderCircuitBreaker } from "../strategies/circuit-breaker.js";
 import { RateLimiter } from "../strategies/rate-limit.js";
 import { RetryStrategy } from "../strategies/retry.js";
 import { IdempotencyResolver } from "../strategies/idempotency.js";
+import { sanitizeBoundaryError } from "./error-sanitizer.js";
 import { randomUUID } from "crypto";
 
 import type { AuthConfig, AuthToken } from "./types.js";
@@ -160,20 +161,22 @@ export class RequestPipeline {
       // This is the ONLY place errors are normalized - adapter handles all provider-specific logic
       let boundaryError: BoundaryError;
       try {
-        boundaryError = this.config.adapter.parseError(error);
+        const adapterError = this.config.adapter.parseError(error);
+        // CRITICAL: Sanitize adapter output to ensure strict BoundaryError compliance
+        // This recomputes category/retryable if invalid and drops unsafe metadata
+        boundaryError = sanitizeBoundaryError(adapterError, this.config.provider);
       } catch (parseError) {
-        // Adapter failed to parse error - create generic fallback
-        boundaryError = {
-          name: "BoundaryError",
-          message: error instanceof Error ? error.message : String(error),
-          category: "provider" as const,
-          retryable: false,
-          provider: this.config.provider,
-          metadata: {
-            originalError: error instanceof Error ? error.message : error,
-            parseError: parseError instanceof Error ? parseError.message : parseError,
+        // Adapter failed to parse error - sanitize the original error
+        boundaryError = sanitizeBoundaryError(
+          {
+            message: error instanceof Error ? error.message : String(error),
+            metadata: {
+              originalError: error instanceof Error ? error.message : error,
+              parseError: parseError instanceof Error ? parseError.message : parseError,
+            },
           },
-        };
+          this.config.provider
+        );
       }
 
       // Handle rate limit errors - update rate limiter
@@ -185,15 +188,12 @@ export class RequestPipeline {
         );
       }
 
-      // Convert BoundaryError to NormalizedError for observability (backward compat)
-      const normalizedError = this.boundaryErrorToNormalizedError(boundaryError);
-
       const errorContext: ErrorContext = {
         provider: this.config.provider,
         endpoint,
         method,
         requestId,
-        error: normalizedError,
+        error: boundaryError,
         duration,
         timestamp: new Date(),
       };
@@ -207,7 +207,7 @@ export class RequestPipeline {
           tags: {
             provider: this.config.provider,
             endpoint,
-            errorType: this.mapCategoryToErrorType(boundaryError.category),
+            errorCategory: boundaryError.category,
           },
           timestamp: new Date(),
         });
@@ -286,9 +286,21 @@ export class RequestPipeline {
         body,
       } as RawResponse;
     } catch (error) {
-      // Convert abort error to timeout error
+      // Convert abort error to canonical timeout error with request context
       if (error instanceof Error && error.name === "AbortError") {
-        throw new Error("Request timeout");
+        const timeoutError: BoundaryError = {
+          name: "BoundaryError",
+          message: `Request timeout after ${timeout}ms`,
+          category: "network",
+          retryable: true, // Timeouts are generally retryable
+          provider: this.config.provider,
+          metadata: {
+            timeout,
+            url: builtRequest.url,
+            method: builtRequest.method,
+          },
+        };
+        throw timeoutError;
       }
       throw error;
     } finally {
@@ -296,47 +308,5 @@ export class RequestPipeline {
     }
   }
 
-  /**
-   * Converts BoundaryError to NormalizedError for backward compatibility.
-   * @deprecated This is temporary during migration
-   */
-  private boundaryErrorToNormalizedError(
-    error: BoundaryError
-  ): import("./types.js").NormalizedError {
-    const normalized = new Error(error.message) as import("./types.js").NormalizedError;
-    normalized.type = this.mapCategoryToErrorType(error.category);
-    normalized.provider = error.provider;
-    normalized.actionable = error.message;
-    normalized.retryable = error.retryable;
-    if (error.retryAfter !== undefined) {
-      normalized.retryAfter = error.retryAfter;
-    }
-    normalized.raw = error.metadata;
-    normalized.name = normalized.type;
-    return normalized;
-  }
-
-  /**
-   * Maps BoundaryError category to legacy ErrorType.
-   * @deprecated This is temporary during migration
-   */
-  private mapCategoryToErrorType(
-    category: BoundaryError["category"]
-  ): import("./types.js").ErrorType {
-    switch (category) {
-      case "auth":
-        return "AUTH_ERROR";
-      case "rate_limit":
-        return "RATE_LIMIT";
-      case "validation":
-        return "VALIDATION_ERROR";
-      case "provider":
-        return "PROVIDER_ERROR";
-      case "network":
-        return "NETWORK_ERROR";
-      default:
-        return "PROVIDER_ERROR";
-    }
-  }
 }
 

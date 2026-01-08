@@ -25,9 +25,9 @@ exports[`GitHub Adapter - Contract Tests > parseResponse - Normalized Response S
     "rateLimit": {
       "limit": 5000,
       "remaining": 4999,
-      "reset": 2026-01-08T23:28:22.000Z,
+      "reset": 2026-01-09T00:40:04.000Z,
     },
-    "requestId": "26fae9e9-6be0-43a4-8043-c6795b514879",
+    "requestId": "28ac3ea4-69c7-40ac-bca8-f31a192a8274",
     "schemaVersion": "1.0.0",
     "warnings": [],
   },

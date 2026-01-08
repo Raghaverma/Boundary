@@ -330,10 +330,13 @@ export function validateAdapter(
 /**
  * Validates adapter and throws if invalid.
  * Use this in adapter constructors or initialization to fail fast.
- * 
+ *
+ * IMPORTANT: This function is MANDATORY for adapter registration.
+ * Warnings are treated as errors - adapters must be fully compliant.
+ *
  * @param adapter Adapter instance to validate
  * @param providerName Provider name for error messages
- * @throws Error if adapter is invalid
+ * @throws Error if adapter is invalid or has warnings
  */
 export function assertValidAdapter(
   adapter: ProviderAdapter,
@@ -341,23 +344,15 @@ export function assertValidAdapter(
 ): void {
   const result = validateAdapter(adapter, providerName);
 
-  if (!result.valid) {
+  // Fail on errors OR warnings - no partial compliance allowed
+  if (!result.valid || result.warnings.length > 0) {
     const errorMessage = [
       `Adapter validation failed for '${providerName}':`,
-      ...result.errors.map((e) => `  - ${e}`),
-      ...(result.warnings.length > 0
-        ? ["Warnings:", ...result.warnings.map((w) => `  - ${w}`)]
-        : []),
+      ...result.errors.map((e) => `  - ERROR: ${e}`),
+      ...result.warnings.map((w) => `  - WARNING (treated as error): ${w}`),
     ].join("\n");
 
     throw new Error(errorMessage);
-  }
-
-  if (result.warnings.length > 0) {
-    console.warn(
-      `Adapter validation warnings for '${providerName}':`,
-      ...result.warnings.map((w) => `  - ${w}`)
-    );
   }
 }
 

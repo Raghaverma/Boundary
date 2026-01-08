@@ -29,6 +29,7 @@ import { IdempotencyLevel } from "../../core/types.js";
 import { GitHubPaginationStrategy } from "./pagination.js";
 import { ResponseNormalizer } from "../../core/normalizer.js";
 import { validateAdapter } from "../../core/adapter-validator.js";
+import { parseRetryAfter, parseRateLimitHeaders } from "../../core/header-parser.js";
 
 /**
  * GitHub API error response structure.
@@ -413,7 +414,7 @@ export class GitHubAdapter implements ProviderAdapter {
 
   /**
    * Rate limit policy for GitHub.
-   * 
+   *
    * GitHub provides rate limit information in response headers:
    * - X-RateLimit-Limit: Total requests allowed per window
    * - X-RateLimit-Remaining: Requests remaining in current window
@@ -421,35 +422,22 @@ export class GitHubAdapter implements ProviderAdapter {
    * - X-RateLimit-Used: Requests used in current window (not needed)
    */
   rateLimitPolicy(headers: Headers): RateLimitInfo {
-    const limitStr = this.getHeaderValue(headers, "X-RateLimit-Limit");
-    const remainingStr = this.getHeaderValue(headers, "X-RateLimit-Remaining");
-    const resetStr = this.getHeaderValue(headers, "X-RateLimit-Reset");
+    // Use hardened header parser for safe extraction
+    const parsed = parseRateLimitHeaders(headers);
 
-    // Parse limit (default: 5000 for authenticated, 60 for unauthenticated)
-    const limit = limitStr ? parseInt(limitStr, 10) : 5000;
-    
-    // Parse remaining (default: assume limit if not provided)
-    const remaining = remainingStr ? parseInt(remainingStr, 10) : limit;
-    
-    // Parse reset time (GitHub provides Unix timestamp)
-    let reset: Date;
-    if (resetStr) {
-      const resetTimestamp = parseInt(resetStr, 10);
-      if (!isNaN(resetTimestamp)) {
-        reset = new Date(resetTimestamp * 1000);
-      } else {
-        // Fallback: 1 hour from now
-        reset = new Date(Date.now() + 60 * 60 * 1000);
-      }
-    } else {
-      // Fallback: 1 hour from now
-      reset = new Date(Date.now() + 60 * 60 * 1000);
+    if (parsed) {
+      return {
+        limit: parsed.limit,
+        remaining: parsed.remaining,
+        reset: parsed.reset,
+      };
     }
 
+    // Fallback with defaults if headers missing or malformed
     return {
-      limit,
-      remaining,
-      reset,
+      limit: 5000, // Default for authenticated requests
+      remaining: 5000,
+      reset: new Date(Date.now() + 60 * 60 * 1000), // 1 hour from now
     };
   }
 
@@ -548,21 +536,24 @@ export class GitHubAdapter implements ProviderAdapter {
       return undefined;
     }
 
-    // Try Retry-After header first (seconds)
-    const retryAfter = this.getHeaderValue(headers, "Retry-After");
-    if (retryAfter) {
-      const seconds = parseInt(retryAfter, 10);
-      if (!isNaN(seconds)) {
-        return new Date(Date.now() + seconds * 1000);
-      }
+    // Convert to Headers if needed for parseRetryAfter
+    const retryAfterValue = this.getHeaderValue(headers, "Retry-After");
+    const parsed = parseRetryAfter(retryAfterValue);
+    if (parsed) {
+      return parsed;
     }
 
-    // Fallback to X-RateLimit-Reset (Unix timestamp)
-    const resetStr = this.getHeaderValue(headers, "X-RateLimit-Reset");
-    if (resetStr) {
-      const resetTimestamp = parseInt(resetStr, 10);
-      if (!isNaN(resetTimestamp)) {
-        return new Date(resetTimestamp * 1000);
+    // Fallback to X-RateLimit-Reset using hardened parser
+    const resetValue = this.getHeaderValue(headers, "X-RateLimit-Reset");
+    if (resetValue) {
+      // X-RateLimit-Reset is a Unix timestamp (seconds)
+      const timestamp = parseInt(resetValue.trim(), 10);
+      if (!isNaN(timestamp) && timestamp > 0) {
+        const now = Math.floor(Date.now() / 1000);
+        // Validate it's reasonable (within 1 year)
+        if (timestamp >= now - 60 && timestamp < now + 86400 * 365) {
+          return new Date(timestamp * 1000);
+        }
       }
     }
 

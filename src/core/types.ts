@@ -165,7 +165,7 @@ export interface ErrorContext {
   endpoint: string;
   method: string;
   requestId: string;
-  error: NormalizedError;
+  error: BoundaryError;
   duration: number;
   timestamp: Date;
 }

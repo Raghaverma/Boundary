@@ -17,12 +17,42 @@ import { IdempotencyResolver } from "./strategies/idempotency.js";
 import { IdempotencyLevel } from "./core/types.js";
 import { ConsoleObservability } from "./observability/console.js";
 import type { ProviderAdapter } from "./core/types.js";
+import { assertValidAdapter } from "./core/adapter-validator.js";
 import { GitHubAdapter } from "./providers/github/adapter.js";
 
-// Internal registry of built-in adapters (not exported)
-const BUILTIN_ADAPTERS = {
-  github: new GitHubAdapter(),
-} as const;
+/**
+ * Lazy-instantiated built-in adapters.
+ * Adapter classes are imported at module load, but instances are only
+ * created when first requested, reducing memory usage when not all
+ * providers are used.
+ */
+const BUILTIN_ADAPTER_CLASSES: Record<string, new () => ProviderAdapter> = {
+  github: GitHubAdapter,
+};
+
+// Cache for instantiated adapters (lazy instantiation)
+const lazyAdapterCache = new Map<string, ProviderAdapter>();
+
+/**
+ * Gets a built-in adapter by name, instantiating lazily if needed.
+ */
+function getBuiltinAdapter(name: string): ProviderAdapter | null {
+  // Check cache first
+  if (lazyAdapterCache.has(name)) {
+    return lazyAdapterCache.get(name)!;
+  }
+
+  // Check if class exists
+  const AdapterClass = BUILTIN_ADAPTER_CLASSES[name];
+  if (!AdapterClass) {
+    return null;
+  }
+
+  // Create and cache the adapter instance (lazy instantiation)
+  const adapter = new AdapterClass();
+  lazyAdapterCache.set(name, adapter);
+  return adapter;
+}
 
 export interface ProviderClient {
   get<T = unknown>(endpoint: string, options?: any): Promise<NormalizedResponse<T>>;
@@ -31,6 +61,17 @@ export interface ProviderClient {
   patch<T = unknown>(endpoint: string, options?: any): Promise<NormalizedResponse<T>>;
   delete<T = unknown>(endpoint: string, options?: any): Promise<NormalizedResponse<T>>;
   paginate<T = unknown>(endpoint: string, options?: any): AsyncGenerator<NormalizedResponse<T>>;
+}
+
+/**
+ * Interface for external state storage (e.g., Redis).
+ * Implement this to persist circuit breaker and rate limiter state
+ * across serverless function invocations or multiple instances.
+ */
+export interface StateStorage {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string, ttlSeconds?: number): Promise<void>;
+  del(key: string): Promise<void>;
 }
 
 export class Boundary {
@@ -87,6 +128,9 @@ export class Boundary {
       this.observability = [new ConsoleObservability()];
     }
 
+    // IMPORTANT: Emit warning about in-memory state (after observability is ready)
+    this.emitLocalStateWarning();
+
     // Initialize providers
     if (this.config.providers) {
       for (const [providerName, providerConfig] of Object.entries(
@@ -94,6 +138,32 @@ export class Boundary {
       )) {
         this.initializeProvider(providerName, providerConfig);
       }
+    }
+  }
+
+  /**
+   * Emits a warning about in-memory state that resets on cold starts.
+   * This helps developers understand the limitations in serverless environments.
+   */
+  private emitLocalStateWarning(): void {
+    // Use observability adapter if available, otherwise use console
+    const warning = [
+      "[Boundary] WARNING: Using in-memory state for circuit breaker and rate limiter.",
+      "This state will be lost on process restart or serverless cold start.",
+      "For production serverless deployments, consider:",
+      "  1. Implementing StateStorage interface with Redis/Memcached",
+      "  2. Using external rate limiting (API gateway)",
+      "  3. Accepting state reset as a trade-off for simplicity",
+      "See: https://github.com/Raghaverma/Boundary#state-persistence",
+    ].join("\n");
+
+    // Log through observability if available, otherwise console
+    if (this.observability && this.observability.length > 0) {
+      for (const obs of this.observability) {
+        obs.logWarning(warning, { component: "Boundary", type: "state_warning" });
+      }
+    } else {
+      console.warn(warning);
     }
   }
 
@@ -156,14 +226,16 @@ export class Boundary {
     providerName: string,
     providerConfig: ProviderConfig
   ): void {
-    // Get adapter from config, adapters map, built-in adapters, or throw error
+    // Get adapter from config, adapters map, built-in adapters (lazy-loaded), or throw error
     let adapter = providerConfig.adapter ?? this.adapters.get(providerName);
-    
-    // Auto-register built-in adapter if available
-    if (!adapter && providerName in BUILTIN_ADAPTERS) {
-      const builtinAdapter = BUILTIN_ADAPTERS[providerName as keyof typeof BUILTIN_ADAPTERS];
-      this.adapters.set(providerName, builtinAdapter);
-      adapter = builtinAdapter;
+
+    // Auto-register built-in adapter if available (lazy-loaded on demand)
+    if (!adapter) {
+      const builtinAdapter = getBuiltinAdapter(providerName);
+      if (builtinAdapter) {
+        this.adapters.set(providerName, builtinAdapter);
+        adapter = builtinAdapter;
+      }
     }
     
     if (!adapter) {
@@ -171,6 +243,9 @@ export class Boundary {
         `No adapter found for provider: ${providerName}. Provide adapter in config or use registerProvider().`
       );
     }
+
+    // Validate adapter contract - fail fast if non-compliant
+    assertValidAdapter(adapter, providerName);
 
     // Setup circuit breaker
     const circuitBreakerConfig = {
