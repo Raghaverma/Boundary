@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Auto-registration of built-in provider adapters
+- Configuration validation for rate limit, retry, circuit breaker, and timeout settings
+- Fallback error handling when adapter `parseError()` throws unexpectedly
+
+### Fixed
+- Removed circular self-dependency in package.json that caused installation failures
+- Fetch timeout now properly cancels requests using `AbortController` (prevents resource leaks)
+- GitHub 403 errors now correctly distinguished between rate limit and permission denied
+- Adapter validation now runs in production (logs warning instead of throwing)
+
+### Changed
+- Improved type safety: `authToken` parameter now uses `AuthToken` type instead of `any`
 
 ## [1.0.2] - 2024-01-XX
 
@@ -41,4 +52,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.0.2]: https://github.com/Raghaverma/Boundary/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/Raghaverma/Boundary/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Raghaverma/Boundary/releases/tag/v1.0.0
+
 
