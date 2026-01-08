@@ -4,6 +4,14 @@ This document explains why Boundary exists through concrete failure analysis. It
 
 This is not marketing, not a tutorial, and not aspirational. It is a failure analysis and containment narrative.
 
+## TL;DR
+
+External APIs are operationally hostile. They have ambiguous errors, inconsistent formats, and brittle behaviors. Naive integrations scatter provider-specific knowledge throughout application code, causing cascading failures, security risks, and maintenance burden.
+
+Boundary contains these failures by encoding operational knowledge in adapters, enforcing canonical error categories, and rejecting non-normalizable features.
+
+This is for applications integrating multiple providers that need operational consistency. Not for single-provider apps with simple requirements.
+
 ## 1. The Naive Integration (Reality)
 
 Here is realistic TypeScript code that integrates directly with the GitHub API without Boundary:
@@ -191,6 +199,8 @@ if (response.status === 404) {
 
 **Why it's hard to detect**: Both cases return the same status code. The error message might be identical. You only discover the issue when a user reports "I can see the repo in the web UI but your app says it doesn't exist."
 
+See how the [GitHub adapter disambiguates 404 errors](src/providers/github/adapter.ts#L271).
+
 ### Failure Mode 2: GitHub 403 Rate Limit vs Permission
 
 **The Problem**: GitHub sometimes returns 403 for rate limit exhaustion instead of 429.
@@ -215,6 +225,8 @@ if (response.status === 403) {
 **Why it fails**: If the application doesn't check the rate limit header, it treats rate limits as permission errors. Users see "permission denied" when they should see "rate limit exceeded." Retry logic doesn't trigger, causing unnecessary failures.
 
 **Why it's hard to detect**: The status code is wrong. You must know GitHub's quirk and check headers. If you miss this, your error handling is broken.
+
+See how the [GitHub adapter detects rate limits in 403 responses](src/providers/github/adapter.ts#L241).
 
 ### Failure Mode 3: Rate Limit Retries Causing Cascading Failures
 
@@ -297,6 +309,23 @@ if (response.status === 404) {
 
 **Why it's hard to detect**: The application works correctly from a functional perspective, but violates security principles. This is a correctness issue that doesn't manifest as a crash.
 
+## Real-World Example: Production Incident
+
+A production application integrated directly with GitHub's API to fetch repository metadata. The application handled pagination by parsing GitHub's `Link` header and extracting page numbers.
+
+**The Incident**: GitHub updated their API and changed the `Link` header format for some endpoints. The application's regex pattern stopped matching, but no error was thrown. The application silently stopped paginating after the first page.
+
+**The Impact**: 
+- Users saw incomplete data (only first 100 repositories)
+- No errors were logged (the code assumed "no Link header = no more pages")
+- The issue went undetected for 3 days until a user with 200+ repositories reported missing data
+
+**Why It Happened**: The application code made an implicit assumption about GitHub's response format. When GitHub changed it (even in a backward-compatible way), the assumption broke silently.
+
+**How Boundary Prevents This**: Boundary's [GitHub adapter](src/providers/github/adapter.ts) encodes pagination logic in one place. When GitHub changes, the adapter is updated and tested. The application code doesn't need to know about Link headers at all.
+
+This is not a theoretical problem. Vendor API changes break naive integrations regularly. Boundary contains these failures by encoding operational knowledge in adapters.
+
 ## 3. The Boundary Version
 
 Here is the same use case using Boundary:
@@ -349,6 +378,16 @@ async function fetchAllRepos(): Promise<Repo[]> {
   }
 }
 ```
+
+| Aspect | Without Boundary | With Boundary |
+|--------|-----------------|---------------|
+| Lines of code | 150 | 15 |
+| Provider knowledge | Throughout app | In adapter only |
+| Error handling | 20+ status codes | 5 categories |
+| Rate limiting | Manual tracking | Automatic |
+| Retries | Manual logic | Automatic |
+| Pagination | Manual parsing | Automatic |
+| Vendor changes | Break everywhere | Break in adapter |
 
 **What the application code no longer needs to know:**
 
