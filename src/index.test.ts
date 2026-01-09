@@ -12,6 +12,7 @@ describe("Boundary - Built-in Adapter Auto-Registration", () => {
       github: {
         auth: { token: "test-token" },
       },
+      localUnsafe: true,
     });
 
     // Constructor should succeed
@@ -29,6 +30,7 @@ describe("Boundary - Built-in Adapter Auto-Registration", () => {
           auth: { token: "test-token" },
         },
       },
+      localUnsafe: true,
     });
 
     expect(boundary).toBeDefined();

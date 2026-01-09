@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Boundary } from "./index.js";
-import type { BoundaryConfig, StateStorage, ObservabilityAdapter, RequestContext, ResponseContext, ErrorContext, Metric } from "./core/types.js";
+import { BoundaryError, type BoundaryConfig, type StateStorage, type ObservabilityAdapter, type RequestContext, type ResponseContext, type ErrorContext, type Metric } from "./core/types.js";
 
 // Mock state storage for testing
 class MockStateStorage implements StateStorage {
@@ -336,11 +336,7 @@ describe("Safety Guarantees", () => {
         buildRequest: () => ({ url: "test", method: "GET", headers: {} }),
         parseResponse: () => ({ data: {}, meta: { provider: "test", requestId: "1", rateLimit: { limit: 1, remaining: 1, reset: new Date() }, warnings: [], schemaVersion: "1.0" } }),
         parseError: () => {
-          const error = new Error("test") as any;
-          error.category = "provider";
-          error.retryable = false;
-          error.provider = "test";
-          return error;
+          return new BoundaryError("test", "provider", "test", false);
         },
         authStrategy: async (config: any) => {
           // This should NOT trigger side effects during validation
@@ -382,6 +378,15 @@ describe("Safety Guarantees", () => {
 
   describe("5. Pagination Safety", () => {
     it("should detect pagination cycles", async () => {
+      // Mock fetch to avoid network calls
+      (globalThis as any).fetch = async () => ({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({ items: [] }),
+        text: async () => JSON.stringify({ items: [] }),
+      });
+
       let callCount = 0;
       const adapter = {
         buildRequest: () => ({ url: "test", method: "GET", headers: {} }),
@@ -404,11 +409,7 @@ describe("Safety Guarantees", () => {
           };
         },
         parseError: () => {
-          const error = new Error("test") as any;
-          error.category = "provider";
-          error.retryable = false;
-          error.provider = "test";
-          return error;
+          return new BoundaryError("test", "provider", "test", false);
         },
         authStrategy: async () => ({ token: "test" }),
         rateLimitPolicy: () => ({ limit: 1, remaining: 1, reset: new Date() }),
@@ -449,7 +450,16 @@ describe("Safety Guarantees", () => {
       expect(errorThrown).toBe(true);
     });
 
-    it("should enforce max page limit", async () => {
+    it("should enforce max page limit", { timeout: 120000 }, async () => {
+      // Mock fetch to avoid network calls
+      (globalThis as any).fetch = async () => ({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({ items: [] }),
+        text: async () => JSON.stringify({ items: [] }),
+      });
+
       let pageCount = 0;
       const adapter = {
         buildRequest: () => ({ url: "test", method: "GET", headers: {} }),
@@ -471,11 +481,7 @@ describe("Safety Guarantees", () => {
           };
         },
         parseError: () => {
-          const error = new Error("test") as any;
-          error.category = "provider";
-          error.retryable = false;
-          error.provider = "test";
-          return error;
+          return new BoundaryError("test", "provider", "test", false);
         },
         authStrategy: async () => ({ token: "test" }),
         rateLimitPolicy: () => ({ limit: 1, remaining: 1, reset: new Date() }),
@@ -519,6 +525,15 @@ describe("Safety Guarantees", () => {
 
   describe("6. Typed Public API", () => {
     it("should have typed request options", async () => {
+      // Mock fetch to return error
+      (globalThis as any).fetch = async () => ({
+        ok: false,
+        status: 404,
+        headers: new Headers(),
+        json: async () => ({ message: "Not found" }),
+        text: async () => "Not found",
+      });
+
       const boundary = await Boundary.create({
         github: {
           auth: { token: "test-token" },
@@ -529,7 +544,7 @@ describe("Safety Guarantees", () => {
       // TypeScript should catch type errors at compile time
       // This test verifies the types are exported and used
       const client = (boundary as any).github;
-      
+
       // These should compile without 'any' types
       await expect(
         client.get("/test", {

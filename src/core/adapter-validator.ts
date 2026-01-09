@@ -14,13 +14,13 @@
  * This tooling makes incorrect adapters impossible to ignore.
  */
 
-import type {
-  ProviderAdapter,
+import {
   BoundaryError,
-  RawResponse,
-  AdapterInput,
-  AuthConfig,
-  PaginationStrategy,
+  type ProviderAdapter,
+  type RawResponse,
+  type AdapterInput,
+  type AuthConfig,
+  type PaginationStrategy,
 } from "./types.js";
 
 // Note: validator must not cause side-effects. We only invoke pure/cheap methods.
@@ -158,41 +158,42 @@ export async function validateAdapter(
 
     for (const testError of testErrors) {
       try {
-        const error = adapter.parseError(testError);
+        const error: unknown = adapter.parseError(testError);
 
-        // Must be Error instance
-        if (!(error instanceof Error)) {
-          errors.push("parseError must return Error instance (BoundaryError)");
+        // Must be BoundaryError instance (ensures proper error hierarchy)
+        if (!(error instanceof BoundaryError)) {
+          if (error instanceof Error) {
+            errors.push(
+              "parseError must return BoundaryError instance (extends Error), got Error-like object without proper inheritance"
+            );
+          } else {
+            errors.push("parseError must return BoundaryError instance");
+          }
           continue;
         }
 
-        // Must have category property
-        const boundaryError = error as BoundaryError;
-        if (!("category" in boundaryError)) {
-          errors.push("parseError must return BoundaryError with 'category' property");
-        } else {
-          const validCategories = ["auth", "rate_limit", "network", "provider", "validation"];
-          if (!validCategories.includes(boundaryError.category)) {
-            errors.push(
-              `parseError returned invalid category: ${boundaryError.category}. Must be one of: ${validCategories.join(", ")}`
-            );
-          }
-        }
-
-        // Must have retryable property
-        if (typeof boundaryError.retryable !== "boolean") {
-          errors.push("parseError must return BoundaryError with 'retryable' boolean property");
-        }
-
-        // Must have provider property
-        if (boundaryError.provider !== providerName) {
+        // Validate category (should always be valid due to BoundaryError class, but double-check)
+        const validCategories = ["auth", "rate_limit", "network", "provider", "validation"];
+        if (!validCategories.includes(error.category)) {
           errors.push(
-            `parseError returned provider '${boundaryError.provider}', expected '${providerName}'`
+            `parseError returned invalid category: ${error.category}. Must be one of: ${validCategories.join(", ")}`
+          );
+        }
+
+        // Validate retryable (should always be boolean due to class, but double-check)
+        if (typeof error.retryable !== "boolean") {
+          errors.push("parseError returned BoundaryError with non-boolean 'retryable' property");
+        }
+
+        // Validate provider matches
+        if (error.provider !== providerName) {
+          errors.push(
+            `parseError returned provider '${error.provider}', expected '${providerName}'`
           );
         }
 
         // Must NOT leak raw provider error structure
-        if ("status" in boundaryError && typeof (boundaryError as any).status === "number") {
+        if ("status" in error && typeof (error as any).status === "number") {
           errors.push(
             "parseError MUST NOT leak provider-specific fields (like 'status'). Use metadata instead."
           );
@@ -201,7 +202,7 @@ export async function validateAdapter(
         // Must NOT leak provider-specific error types
         const providerSpecificFields = ["documentation_url", "github_message", "stripe_error"];
         for (const field of providerSpecificFields) {
-          if (field in boundaryError && !(field in Error.prototype)) {
+          if (field in error && !(field in Error.prototype)) {
             warnings.push(
               `parseError may be leaking provider-specific field: ${field}. Consider moving to metadata.`
             );

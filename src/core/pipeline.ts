@@ -46,6 +46,57 @@ export class RequestPipeline {
     this.config = config;
   }
 
+  /**
+   * Safely broadcasts an observability event to all configured adapters.
+   *
+   * **Failure Policy:**
+   * - Observability adapters MUST NEVER break or abort the request pipeline
+   * - Each adapter is invoked independently in isolation
+   * - Adapter failures are caught, aggregated, and logged to console.error
+   * - Request flow continues regardless of observability failures
+   * - This ensures deterministic request execution with non-blocking telemetry
+   *
+   * **Design Rationale:**
+   * - Telemetry is a cross-cutting concern and should not affect business logic
+   * - Partial observability is better than failed requests
+   * - Aggregated errors provide visibility into observability issues without noise
+   *
+   * @param action - Function to invoke on each observability adapter
+   * @param actionName - Human-readable name for logging (e.g., "logRequest", "recordMetric")
+   */
+  private safelyBroadcastObservability(
+    action: (adapter: ObservabilityAdapter) => void,
+    actionName: string
+  ): void {
+    const errors: Array<{ adapter: string; error: unknown }> = [];
+
+    for (const obs of this.config.observability) {
+      try {
+        action(obs);
+      } catch (error) {
+        errors.push({
+          adapter: obs.constructor?.name || "UnknownObservabilityAdapter",
+          error,
+        });
+      }
+    }
+
+    // If any adapters failed, aggregate and log errors to console.error
+    // (not to observability adapters, to avoid infinite loops)
+    if (errors.length > 0) {
+      const errorSummary = errors
+        .map(
+          ({ adapter, error }) =>
+            `  - ${adapter}: ${error instanceof Error ? error.message : String(error)}`
+        )
+        .join("\n");
+
+      console.error(
+        `[Boundary] Observability failure in ${actionName} (${errors.length}/${this.config.observability.length} adapters failed):\n${errorSummary}`
+      );
+    }
+  }
+
   async execute<T>(
     endpoint: string,
     options: RequestOptions = {}
@@ -77,14 +128,11 @@ export class RequestPipeline {
       options: sanitizedOptions,
     };
 
-    // Log request (sanitized)
-    for (const obs of this.config.observability) {
-      try {
-        obs.logRequest(requestContext);
-      } catch {
-        // Observability should not break request flow
-      }
-    }
+    // Log request (sanitized) - non-blocking observability
+    this.safelyBroadcastObservability(
+      (obs) => obs.logRequest(requestContext),
+      "logRequest"
+    );
 
     try {
       // Step 1: Authenticate using adapter's auth strategy
@@ -123,6 +171,9 @@ export class RequestPipeline {
       // Step 7: Parse response using adapter's parseResponse
       const normalized = this.config.adapter.parseResponse(response);
 
+      // Preserve original requestId from pipeline context
+      normalized.meta.requestId = requestId;
+
       // Step 8: Schema check (if enabled, handled by adapter)
       // This would be done in the adapter's normalizeResponse method
 
@@ -138,37 +189,40 @@ export class RequestPipeline {
         timestamp: new Date(),
       };
 
-      // Log response (sanitized)
-      for (const obs of this.config.observability) {
-        try {
-          obs.logResponse(responseContext);
-        } catch {
-          // swallow
-        }
-        try {
-          obs.recordMetric(sanitizeMetric({
-            name: "boundary.request.count",
-            value: 1,
-            tags: {
-              provider: this.config.provider,
-              endpoint,
-              status: String(response.status),
-            },
-            timestamp: new Date(),
-          }, this.config.sanitizerOptions));
-        } catch {}
-        try {
-          obs.recordMetric(sanitizeMetric({
-            name: "boundary.request.duration",
-            value: duration,
-            tags: {
-              provider: this.config.provider,
-              endpoint,
-            },
-            timestamp: new Date(),
-          }, this.config.sanitizerOptions));
-        } catch {}
-      }
+      // Log response (sanitized) - non-blocking observability
+      this.safelyBroadcastObservability(
+        (obs) => obs.logResponse(responseContext),
+        "logResponse"
+      );
+
+      // Record request count metric - non-blocking observability
+      this.safelyBroadcastObservability(
+        (obs) => obs.recordMetric(sanitizeMetric({
+          name: "boundary.request.count",
+          value: 1,
+          tags: {
+            provider: this.config.provider,
+            endpoint,
+            status: String(response.status),
+          },
+          timestamp: new Date(),
+        }, this.config.sanitizerOptions)),
+        "recordMetric:request.count"
+      );
+
+      // Record request duration metric - non-blocking observability
+      this.safelyBroadcastObservability(
+        (obs) => obs.recordMetric(sanitizeMetric({
+          name: "boundary.request.duration",
+          value: duration,
+          tags: {
+            provider: this.config.provider,
+            endpoint,
+          },
+          timestamp: new Date(),
+        }, this.config.sanitizerOptions)),
+        "recordMetric:request.duration"
+      );
 
       return normalized as NormalizedResponse<T>;
     } catch (error) {
@@ -224,24 +278,26 @@ export class RequestPipeline {
         errorContext = { ...errorContext, error: sanitizedError };
       } catch {}
 
-      // Log error (sanitized)
-      for (const obs of this.config.observability) {
-        try {
-          obs.logError(errorContext);
-        } catch {}
-        try {
-          obs.recordMetric(sanitizeMetric({
-            name: "boundary.request.error",
-            value: 1,
-            tags: {
-              provider: this.config.provider,
-              endpoint,
-              errorCategory: boundaryError.category,
-            },
-            timestamp: new Date(),
-          }, this.config.sanitizerOptions));
-        } catch {}
-      }
+      // Log error (sanitized) - non-blocking observability
+      this.safelyBroadcastObservability(
+        (obs) => obs.logError(errorContext),
+        "logError"
+      );
+
+      // Record error metric - non-blocking observability
+      this.safelyBroadcastObservability(
+        (obs) => obs.recordMetric(sanitizeMetric({
+          name: "boundary.request.error",
+          value: 1,
+          tags: {
+            provider: this.config.provider,
+            endpoint,
+            errorCategory: boundaryError.category,
+          },
+          timestamp: new Date(),
+        }, this.config.sanitizerOptions)),
+        "recordMetric:request.error"
+      );
 
       throw boundaryError;
     }

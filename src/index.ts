@@ -165,8 +165,40 @@ export class Boundary {
       this.config.observabilitySanitizer
     );
     if (this.observability && this.observability.length > 0) {
+      // Safely broadcast warning to observability adapters (non-blocking)
+      const errors: Array<{ adapter: string; error: unknown }> = [];
       for (const obs of this.observability) {
-        obs.logWarning(warning, safeMetadata as Record<string, unknown>);
+        try {
+          obs.logWarning(warning, safeMetadata as Record<string, unknown>);
+        } catch (error) {
+          errors.push({
+            adapter: obs.constructor?.name || "UnknownObservabilityAdapter",
+            error,
+          });
+        }
+      }
+
+      // If all adapters failed, fall back to console.warn
+      if (errors.length === this.observability.length) {
+        console.warn(warning);
+        console.error(
+          `[Boundary] All observability adapters failed for logWarning:\n${errors
+            .map(
+              ({ adapter, error }) =>
+                `  - ${adapter}: ${error instanceof Error ? error.message : String(error)}`
+            )
+            .join("\n")}`
+        );
+      } else if (errors.length > 0) {
+        // Some adapters failed - log errors but don't fallback (partial observability succeeded)
+        console.error(
+          `[Boundary] Some observability adapters failed for logWarning (${errors.length}/${this.observability.length}):\n${errors
+            .map(
+              ({ adapter, error }) =>
+                `  - ${adapter}: ${error instanceof Error ? error.message : String(error)}`
+            )
+            .join("\n")}`
+        );
       }
     } else {
       console.warn(warning);
@@ -252,6 +284,9 @@ export class Boundary {
 
     // Validate adapter contract - fail fast if non-compliant
     await assertValidAdapter(adapter, providerName);
+
+    // Store adapter for later use in createProviderClient
+    this.adapters.set(providerName, adapter);
 
     // Setup circuit breaker
     const circuitBreakerConfig = {
@@ -407,6 +442,52 @@ export class Boundary {
     this.ensureStarted();
     const circuitBreaker = this.circuitBreakers.get(provider);
     return circuitBreaker?.getStatus() ?? null;
+  }
+
+  /**
+   * Type-safe provider access method with runtime validation.
+   *
+   * **Compile-Time Safety Limitation:**
+   * True compile-time safety for provider lookup is impossible without breaking changes because:
+   * - Providers are registered dynamically at runtime via config
+   * - Custom provider names cannot be known at compile time
+   * - Dynamic property access (boundary.github) requires type casts
+   *
+   * **Current Guarantees:**
+   * - Runtime validation ensures provider exists before returning
+   * - Method overloads provide autocomplete for built-in providers
+   * - Returns undefined for unregistered providers (no exceptions)
+   *
+   * **Alternatives:**
+   * - Use direct property access: `boundary.github.get(...)` (runtime-only safety)
+   * - Use this method with runtime checks: `if (boundary.provider("github"))`
+   *
+   * @param name - Provider name (e.g., "github" for built-ins, or custom provider name)
+   * @returns Provider client if registered, undefined otherwise
+   *
+   * @example
+   * ```typescript
+   * // Built-in provider (with autocomplete)
+   * const github = boundary.provider("github");
+   * if (github) {
+   *   const response = await github.get("/user");
+   * }
+   *
+   * // Custom provider (runtime validation only)
+   * const custom = boundary.provider("my-custom-provider");
+   * if (custom) {
+   *   await custom.post("/endpoint", { body: { ... } });
+   * }
+   * ```
+   */
+  provider(name: "github"): ProviderClient | undefined;
+  provider(name: string): ProviderClient | undefined;
+  provider(name: string): ProviderClient | undefined {
+    this.ensureStarted();
+    // Type assertion is necessary due to dynamic property assignment.
+    // This is the unavoidable cost of runtime provider registration.
+    // The sanitizer ensures that only valid ProviderClient instances are assigned.
+    return (this as any)[name] as ProviderClient | undefined;
   }
 
   async registerProvider(

@@ -49,58 +49,82 @@ export type BoundaryErrorCategory =
   | "validation"; // Request validation errors (4xx, except auth)
 
 /**
- * Canonical Boundary error type.
- * 
+ * Canonical Boundary error class.
+ *
  * INVARIANTS:
  * - MUST be the only error type that escapes adapters
  * - MUST NOT contain provider-specific fields
  * - MUST map all provider errors to canonical categories
  * - MUST provide retryable flag for retry strategy
- * 
+ *
  * GUARANTEES:
  * - category is always one of the canonical categories
  * - retryable accurately reflects whether retry is safe
  * - provider identifies the source provider
  * - message is human-readable and actionable
- * 
+ * - Proper Error prototype chain with stack traces
+ * - instanceof BoundaryError works correctly at runtime
+ *
  * MUST NEVER LEAK:
  * - Provider-specific error codes
  * - Provider-specific error structures
  * - Raw provider error objects (except in metadata for debugging)
  */
-export interface BoundaryError extends Error {
+export class BoundaryError extends Error {
   /**
    * Canonical error category. All provider errors MUST map to one of these.
    */
   category: BoundaryErrorCategory;
-  
+
   /**
    * Whether this error is safe to retry.
    * MUST be accurate - incorrect values break retry logic.
    */
   retryable: boolean;
-  
+
   /**
    * Provider identifier (e.g., "github", "stripe").
    */
   provider: string;
-  
-  /**
-   * Human-readable, actionable error message.
-   * MUST NOT include provider-specific terminology.
-   */
-  message: string;
-  
+
   /**
    * Optional metadata for debugging.
    * MAY contain provider-specific details, but MUST NOT be required for error handling.
    */
   metadata?: Record<string, unknown>;
-  
+
   /**
    * Optional retry-after timestamp for rate limit errors.
    */
   retryAfter?: Date;
+
+  constructor(
+    message: string,
+    category: BoundaryErrorCategory,
+    provider: string,
+    retryable: boolean,
+    metadata?: Record<string, unknown>,
+    retryAfter?: Date
+  ) {
+    super(message);
+    this.name = "BoundaryError";
+    this.category = category;
+    this.provider = provider;
+    this.retryable = retryable;
+
+    // Only assign optional properties if defined (exactOptionalPropertyTypes compatibility)
+    if (metadata !== undefined) {
+      this.metadata = metadata;
+    }
+    if (retryAfter !== undefined) {
+      this.retryAfter = retryAfter;
+    }
+
+    // Maintain proper stack trace in V8 environments (Node.js, Chrome)
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, BoundaryError);
+    }
+  }
 }
 
 /**
@@ -622,7 +646,8 @@ export interface BoundaryConfig {
 // Versioning
 // ============================================================================
 
-export const SDK_VERSION = "1.0.0";
+import packageJson from "../../package.json";
+export const SDK_VERSION = packageJson.version;
 
 export interface ProviderVersion {
   [provider: string]: string;

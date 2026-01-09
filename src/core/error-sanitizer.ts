@@ -12,7 +12,7 @@
  * - Unsafe metadata is dropped
  */
 
-import type { BoundaryError, BoundaryErrorCategory } from "./types.js";
+import { BoundaryError, type BoundaryErrorCategory } from "./types.js";
 
 /**
  * List of valid canonical error categories.
@@ -197,9 +197,9 @@ export function sanitizeBoundaryError(
   // Provider MUST match expected provider
   const provider = expectedProvider;
 
-  // Extract and sanitize metadata
-  const rawMetadata = err.metadata as Record<string, unknown> | undefined;
-  const metadata = sanitizeMetadata(rawMetadata);
+  // Extract metadata as-is (observability layer will sanitize for logging)
+  // Error-sanitizer's job is structural validation, not data sanitization
+  const metadata = err.metadata as Record<string, unknown> | undefined;
 
   // Extract retryAfter if present and valid
   let retryAfter: Date | undefined;
@@ -214,22 +214,15 @@ export function sanitizeBoundaryError(
     }
   }
 
-  // Construct sanitized BoundaryError
-  const sanitized: BoundaryError = {
-    name: "BoundaryError",
+  // Construct sanitized BoundaryError instance
+  const sanitized = new BoundaryError(
     message,
     category,
-    retryable,
     provider,
-  };
-
-  // Only add optional properties if defined
-  if (metadata !== undefined) {
-    sanitized.metadata = metadata;
-  }
-  if (retryAfter !== undefined) {
-    sanitized.retryAfter = retryAfter;
-  }
+    retryable,
+    metadata,
+    retryAfter
+  );
 
   return sanitized;
 }
@@ -238,11 +231,10 @@ export function sanitizeBoundaryError(
  * Creates a fallback BoundaryError when adapter output is completely unusable.
  */
 function createFallbackError(message: string, provider: string): BoundaryError {
-  return {
-    name: "BoundaryError",
+  return new BoundaryError(
     message,
-    category: "provider",
-    retryable: false,
+    "provider",
     provider,
-  };
+    false
+  );
 }

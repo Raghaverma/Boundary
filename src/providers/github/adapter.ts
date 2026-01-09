@@ -19,13 +19,12 @@ import type {
   RawResponse,
   NormalizedResponse,
   RateLimitInfo,
-  BoundaryError,
   PaginationStrategy,
   IdempotencyConfig,
   AdapterInput,
   BuiltRequest,
 } from "../../core/types.js";
-import { IdempotencyLevel } from "../../core/types.js";
+import { BoundaryError, IdempotencyLevel } from "../../core/types.js";
 import { GitHubPaginationStrategy } from "./pagination.js";
 import { ResponseNormalizer } from "../../core/normalizer.js";
 import { parseRetryAfter, parseRateLimitHeaders } from "../../core/header-parser.js";
@@ -465,18 +464,14 @@ export class GitHubAdapter implements ProviderAdapter {
     metadata?: Record<string, unknown>,
     retryAfter?: Date
   ): BoundaryError {
-    const error = new Error(message) as BoundaryError;
-    error.category = category;
-    error.retryable = retryable;
-    error.provider = "github";
-    error.message = message;
-    if (metadata) {
-      error.metadata = metadata;
-    }
-    if (retryAfter) {
-      error.retryAfter = retryAfter;
-    }
-    return error;
+    return new BoundaryError(
+      message,
+      category,
+      "github",
+      retryable,
+      metadata,
+      retryAfter
+    );
   }
 
   /**

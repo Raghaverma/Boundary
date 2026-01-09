@@ -6,23 +6,32 @@ import {
   CircuitState,
   type CircuitBreakerConfig,
   type CircuitBreakerStatus,
-  NormalizedError,
+  BoundaryError,
 } from "../core/types.js";
 
-export class CircuitOpenError extends Error implements NormalizedError {
-  type = "CIRCUIT_OPEN" as const;
-  provider: string;
-  actionable: string;
-  retryable = false;
-  retryAfter?: Date;
-
+/**
+ * CircuitOpenError is thrown when a circuit breaker is in OPEN state.
+ * Extends BoundaryError to maintain proper error hierarchy and enable
+ * runtime instanceof checks across the pipeline.
+ */
+export class CircuitOpenError extends BoundaryError {
   constructor(provider: string, retryAfter?: Date) {
-    super(`Circuit breaker is OPEN for provider: ${provider}`);
+    super(
+      `Circuit breaker is OPEN for provider: ${provider}`,
+      "provider",
+      provider,
+      false,
+      {
+        reason: "circuit_breaker_open",
+        nextAttempt: retryAfter?.toISOString() ?? "unknown",
+      },
+      retryAfter
+    );
     this.name = "CircuitOpenError";
-    this.provider = provider;
-    this.actionable = `Circuit breaker is open. Retry after ${retryAfter?.toISOString() ?? "unknown"}`;
-    if (retryAfter !== undefined) {
-      this.retryAfter = retryAfter;
+
+    // Maintain proper stack trace for CircuitOpenError specifically
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, CircuitOpenError);
     }
   }
 }

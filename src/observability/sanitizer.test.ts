@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { Boundary } from "../index.js";
-import type { ObservabilityAdapter, Metric } from "../core/types.js";
+import { BoundaryError, type ObservabilityAdapter, type Metric } from "../core/types.js";
 
 class MockObservability implements ObservabilityAdapter {
   public requests: any[] = [];
@@ -41,14 +41,13 @@ class TestAdapter {
     };
   }
   parseError(raw: any) {
-    return {
-      name: "BoundaryError",
-      message: "Provider error",
-      category: "provider",
-      retryable: false,
-      provider: "test",
-      metadata: { secret: "should-not-be-logged", inner: { apiKey: "topsecret" } }
-    };
+    return new BoundaryError(
+      "Provider error",
+      "provider" as const,
+      "test",
+      false,
+      { secret: "should-not-be-logged", inner: { apiKey: "topsecret" } }
+    );
   }
   rateLimitPolicy(headers: Headers) {
     return { limit: 100, remaining: 99, reset: new Date() };
