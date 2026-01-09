@@ -93,8 +93,12 @@ export class Boundary {
             "defaults",
             "schemaValidation",
             "observability",
+            "observabilitySanitizer",
             "idempotency",
             "providers",
+            "stateStorage",
+            "localUnsafe",
+            "mode",
           ]);
           const providerConfigs: Record<string, ProviderConfig> = {};
           
