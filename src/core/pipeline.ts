@@ -19,6 +19,8 @@ import { RateLimiter } from "../strategies/rate-limit.js";
 import { RetryStrategy } from "../strategies/retry.js";
 import { IdempotencyResolver } from "../strategies/idempotency.js";
 import { sanitizeBoundaryError } from "./error-sanitizer.js";
+import { sanitizeObject, sanitizeMetric } from "./observability-sanitizer.js";
+import { sanitizeRequestOptions } from "./request-sanitizer.js";
 import { randomUUID } from "crypto";
 
 import type { AuthConfig, AuthToken } from "./types.js";
@@ -34,6 +36,7 @@ export interface PipelineConfig {
   observability: ObservabilityAdapter[];
   timeout: number | undefined;
   autoGenerateIdempotencyKeys?: boolean;
+  sanitizerOptions?: { redactedKeys?: string[] };
 }
 
 export class RequestPipeline {
@@ -63,18 +66,24 @@ export class RequestPipeline {
       options
     );
 
+    const sanitizedOptions = sanitizeRequestOptions(options, this.config.sanitizerOptions);
+
     const requestContext: RequestContext = {
       provider: this.config.provider,
       endpoint,
       method,
       requestId,
       timestamp: new Date(),
-      options,
+      options: sanitizedOptions,
     };
 
-    // Log request
+    // Log request (sanitized)
     for (const obs of this.config.observability) {
-      obs.logRequest(requestContext);
+      try {
+        obs.logRequest(requestContext);
+      } catch {
+        // Observability should not break request flow
+      }
     }
 
     try {
@@ -129,28 +138,36 @@ export class RequestPipeline {
         timestamp: new Date(),
       };
 
-      // Log response
+      // Log response (sanitized)
       for (const obs of this.config.observability) {
-        obs.logResponse(responseContext);
-        obs.recordMetric({
-          name: "boundary.request.count",
-          value: 1,
-          tags: {
-            provider: this.config.provider,
-            endpoint,
-            status: String(response.status),
-          },
-          timestamp: new Date(),
-        });
-        obs.recordMetric({
-          name: "boundary.request.duration",
-          value: duration,
-          tags: {
-            provider: this.config.provider,
-            endpoint,
-          },
-          timestamp: new Date(),
-        });
+        try {
+          obs.logResponse(responseContext);
+        } catch {
+          // swallow
+        }
+        try {
+          obs.recordMetric(sanitizeMetric({
+            name: "boundary.request.count",
+            value: 1,
+            tags: {
+              provider: this.config.provider,
+              endpoint,
+              status: String(response.status),
+            },
+            timestamp: new Date(),
+          }, this.config.sanitizerOptions));
+        } catch {}
+        try {
+          obs.recordMetric(sanitizeMetric({
+            name: "boundary.request.duration",
+            value: duration,
+            tags: {
+              provider: this.config.provider,
+              endpoint,
+            },
+            timestamp: new Date(),
+          }, this.config.sanitizerOptions));
+        } catch {}
       }
 
       return normalized as NormalizedResponse<T>;
@@ -188,7 +205,7 @@ export class RequestPipeline {
         );
       }
 
-      const errorContext: ErrorContext = {
+      let errorContext: ErrorContext = {
         provider: this.config.provider,
         endpoint,
         method,
@@ -198,19 +215,32 @@ export class RequestPipeline {
         timestamp: new Date(),
       };
 
-      // Log error
+      // Sanitize error metadata before logging
+      try {
+        const sanitizedError = { ...boundaryError } as any;
+        if (sanitizedError.metadata) {
+          sanitizedError.metadata = sanitizeObject(sanitizedError.metadata, this.config.sanitizerOptions) as Record<string, unknown>;
+        }
+        errorContext = { ...errorContext, error: sanitizedError };
+      } catch {}
+
+      // Log error (sanitized)
       for (const obs of this.config.observability) {
-        obs.logError(errorContext);
-        obs.recordMetric({
-          name: "boundary.request.error",
-          value: 1,
-          tags: {
-            provider: this.config.provider,
-            endpoint,
-            errorCategory: boundaryError.category,
-          },
-          timestamp: new Date(),
-        });
+        try {
+          obs.logError(errorContext);
+        } catch {}
+        try {
+          obs.recordMetric(sanitizeMetric({
+            name: "boundary.request.error",
+            value: 1,
+            tags: {
+              provider: this.config.provider,
+              endpoint,
+              errorCategory: boundaryError.category,
+            },
+            timestamp: new Date(),
+          }, this.config.sanitizerOptions));
+        } catch {}
       }
 
       throw boundaryError;

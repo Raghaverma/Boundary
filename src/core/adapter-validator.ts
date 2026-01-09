@@ -23,6 +23,8 @@ import type {
   PaginationStrategy,
 } from "./types.js";
 
+// Note: validator must not cause side-effects. We only invoke pure/cheap methods.
+
 /**
  * Validation result for adapter checks.
  */
@@ -41,10 +43,10 @@ export interface ValidationResult {
  * @param providerName Provider name for error messages
  * @returns Validation result with errors and warnings
  */
-export function validateAdapter(
+export async function validateAdapter(
   adapter: ProviderAdapter,
   providerName: string
-): ValidationResult {
+): Promise<ValidationResult> {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -214,37 +216,42 @@ export function validateAdapter(
   }
 
   // Validate authStrategy
+  // IMPORTANT: This validation uses a clearly fake token (BOUNDARY_TEST_TOKEN_*)
+  // Adapters MUST NOT make real API calls during validation. They should:
+  // 1. Return a valid AuthToken structure synchronously for test tokens
+  // 2. Throw BoundaryError with category "auth" if token format is invalid
+  // 3. NOT perform actual authentication/validation against provider APIs
   if (typeof adapter.authStrategy === "function") {
     try {
-      const config: AuthConfig = { token: "test-token" };
+      // Use clearly fake test token that adapters should recognize
+      const config: AuthConfig = { token: "BOUNDARY_TEST_TOKEN_DO_NOT_VALIDATE" };
       const tokenPromise = adapter.authStrategy(config);
 
       if (!(tokenPromise instanceof Promise)) {
         errors.push("authStrategy must return Promise<AuthToken>");
       } else {
-        tokenPromise
-          .then((token) => {
-            if (!token || typeof token !== "object") {
-              errors.push("authStrategy must return AuthToken object");
-            } else if (typeof token.token !== "string") {
-              errors.push("authStrategy must return token as string");
-            }
-          })
-          .catch((error) => {
-            // Errors are OK if they're BoundaryErrors
-            if (error instanceof Error && "category" in error) {
-              const boundaryError = error as BoundaryError;
-              if (boundaryError.category !== "auth") {
-                warnings.push(
-                  "authStrategy should throw BoundaryError with category 'auth' on failure"
-                );
-              }
-            } else {
+        try {
+          const token = await tokenPromise;
+          if (!token || typeof token !== "object") {
+            errors.push("authStrategy must return AuthToken object");
+          } else if (typeof token.token !== "string") {
+            errors.push("authStrategy must return token as string");
+          }
+        } catch (error) {
+          // Errors are OK if they're BoundaryErrors
+          if (error instanceof Error && "category" in error) {
+            const boundaryError = error as BoundaryError;
+            if (boundaryError.category !== "auth") {
               warnings.push(
-                "authStrategy should throw BoundaryError, not raw Error"
+                "authStrategy should throw BoundaryError with category 'auth' on failure"
               );
             }
-          });
+          } else {
+            warnings.push(
+              "authStrategy should throw BoundaryError, not raw Error"
+            );
+          }
+        }
       }
     } catch (error) {
       // Synchronous errors are unexpected
@@ -338,11 +345,11 @@ export function validateAdapter(
  * @param providerName Provider name for error messages
  * @throws Error if adapter is invalid or has warnings
  */
-export function assertValidAdapter(
+export async function assertValidAdapter(
   adapter: ProviderAdapter,
   providerName: string
-): void {
-  const result = validateAdapter(adapter, providerName);
+): Promise<void> {
+  const result = await validateAdapter(adapter, providerName);
 
   // Fail on errors OR warnings - no partial compliance allowed
   if (!result.valid || result.warnings.length > 0) {

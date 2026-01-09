@@ -28,7 +28,6 @@ import type {
 import { IdempotencyLevel } from "../../core/types.js";
 import { GitHubPaginationStrategy } from "./pagination.js";
 import { ResponseNormalizer } from "../../core/normalizer.js";
-import { validateAdapter } from "../../core/adapter-validator.js";
 import { parseRetryAfter, parseRateLimitHeaders } from "../../core/header-parser.js";
 
 /**
@@ -59,25 +58,6 @@ export class GitHubAdapter implements ProviderAdapter {
 
   constructor(baseUrl: string = "https://api.github.com") {
     this.baseUrl = baseUrl;
-
-    // Validate adapter implementation at construction time
-    // This fails fast if the adapter doesn't meet the contract
-    const result = validateAdapter(this, "github");
-    if (!result.valid) {
-      const errorMessage = `Adapter validation failed for 'github':\n${result.errors.map((e) => `  - ${e}`).join("\n")}`;
-      if (process.env.NODE_ENV === "production") {
-        // In production, log warning but don't crash
-        console.warn(errorMessage);
-      } else {
-        // In development, fail fast
-        throw new Error(errorMessage);
-      }
-    }
-    if (result.warnings.length > 0) {
-      console.warn(
-        `Adapter validation warnings for 'github':\n${result.warnings.map((w) => `  - ${w}`).join("\n")}`
-      );
-    }
   }
 
   /**

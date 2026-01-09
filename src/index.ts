@@ -8,6 +8,7 @@ import type {
   NormalizedResponse,
   CircuitBreakerStatus,
   ObservabilityAdapter,
+  RequestOptions,
 } from "./core/types.js";
 import { RequestPipeline } from "./core/pipeline.js";
 import { ProviderCircuitBreaker } from "./strategies/circuit-breaker.js";
@@ -19,6 +20,7 @@ import { ConsoleObservability } from "./observability/console.js";
 import type { ProviderAdapter } from "./core/types.js";
 import { assertValidAdapter } from "./core/adapter-validator.js";
 import { GitHubAdapter } from "./providers/github/adapter.js";
+import { sanitizeObject } from "./core/observability-sanitizer.js";
 
 /**
  * Lazy-instantiated built-in adapters.
@@ -30,16 +32,17 @@ const BUILTIN_ADAPTER_CLASSES: Record<string, new () => ProviderAdapter> = {
   github: GitHubAdapter,
 };
 
-// Cache for instantiated adapters (lazy instantiation)
-const lazyAdapterCache = new Map<string, ProviderAdapter>();
-
 /**
  * Gets a built-in adapter by name, instantiating lazily if needed.
+ * Adapters are scoped per Boundary instance to prevent config sharing.
  */
-function getBuiltinAdapter(name: string): ProviderAdapter | null {
-  // Check cache first
-  if (lazyAdapterCache.has(name)) {
-    return lazyAdapterCache.get(name)!;
+function getBuiltinAdapter(
+  name: string,
+  cache: Map<string, ProviderAdapter>
+): ProviderAdapter | null {
+  // Check instance-scoped cache first
+  if (cache.has(name)) {
+    return cache.get(name)!;
   }
 
   // Check if class exists
@@ -48,19 +51,19 @@ function getBuiltinAdapter(name: string): ProviderAdapter | null {
     return null;
   }
 
-  // Create and cache the adapter instance (lazy instantiation)
+  // Create and cache the adapter instance (lazy instantiation, scoped to instance)
   const adapter = new AdapterClass();
-  lazyAdapterCache.set(name, adapter);
+  cache.set(name, adapter);
   return adapter;
 }
 
 export interface ProviderClient {
-  get<T = unknown>(endpoint: string, options?: any): Promise<NormalizedResponse<T>>;
-  post<T = unknown>(endpoint: string, options?: any): Promise<NormalizedResponse<T>>;
-  put<T = unknown>(endpoint: string, options?: any): Promise<NormalizedResponse<T>>;
-  patch<T = unknown>(endpoint: string, options?: any): Promise<NormalizedResponse<T>>;
-  delete<T = unknown>(endpoint: string, options?: any): Promise<NormalizedResponse<T>>;
-  paginate<T = unknown>(endpoint: string, options?: any): AsyncGenerator<NormalizedResponse<T>>;
+  get<T = unknown>(endpoint: string, options?: RequestOptions): Promise<NormalizedResponse<T>>;
+  post<T = unknown>(endpoint: string, options?: RequestOptions): Promise<NormalizedResponse<T>>;
+  put<T = unknown>(endpoint: string, options?: RequestOptions): Promise<NormalizedResponse<T>>;
+  patch<T = unknown>(endpoint: string, options?: RequestOptions): Promise<NormalizedResponse<T>>;
+  delete<T = unknown>(endpoint: string, options?: RequestOptions): Promise<NormalizedResponse<T>>;
+  paginate<T = unknown>(endpoint: string, options?: RequestOptions): AsyncGenerator<NormalizedResponse<T>>;
 }
 
 /**
@@ -68,20 +71,16 @@ export interface ProviderClient {
  * Implement this to persist circuit breaker and rate limiter state
  * across serverless function invocations or multiple instances.
  */
-export interface StateStorage {
-  get(key: string): Promise<string | null>;
-  set(key: string, value: string, ttlSeconds?: number): Promise<void>;
-  del(key: string): Promise<void>;
-}
-
 export class Boundary {
   private config: BoundaryConfig;
   private pipelines: Map<string, RequestPipeline> = new Map();
   private circuitBreakers: Map<string, ProviderCircuitBreaker> = new Map();
   private observability: ObservabilityAdapter[];
   private adapters: Map<string, ProviderAdapter> = new Map();
+  private started = false;
+  private adapterCache: Map<string, ProviderAdapter> = new Map();
 
-  constructor(config: BoundaryConfig, adapters?: Map<string, ProviderAdapter>) {
+  private constructor(config: BoundaryConfig, adapters?: Map<string, ProviderAdapter>) {
     // Validate configuration
     this.validateConfig(config);
 
@@ -128,17 +127,19 @@ export class Boundary {
       this.observability = [new ConsoleObservability()];
     }
 
-    // IMPORTANT: Emit warning about in-memory state (after observability is ready)
-    this.emitLocalStateWarning();
+    // NOTE: Provider validation and initialization happens during `start()`.
+    // This ensures async adapter checks (authStrategy) are awaited and
+    // startup deterministically fails when adapters are invalid.
+  }
 
-    // Initialize providers
-    if (this.config.providers) {
-      for (const [providerName, providerConfig] of Object.entries(
-        this.config.providers
-      )) {
-        this.initializeProvider(providerName, providerConfig);
-      }
-    }
+  /**
+   * Async factory that constructs and starts Boundary.
+   * This enforces async initialization and makes startup deterministic.
+   */
+  static async create(config: BoundaryConfig, adapters?: Map<string, ProviderAdapter>) {
+    const b = new Boundary(config, adapters);
+    await b.start();
+    return b;
   }
 
   /**
@@ -158,9 +159,14 @@ export class Boundary {
     ].join("\n");
 
     // Log through observability if available, otherwise console
+    // Sanitize metadata to ensure no secrets leak
+    const safeMetadata = sanitizeObject(
+      { component: "Boundary", type: "state_warning" },
+      this.config.observabilitySanitizer
+    );
     if (this.observability && this.observability.length > 0) {
       for (const obs of this.observability) {
-        obs.logWarning(warning, { component: "Boundary", type: "state_warning" });
+        obs.logWarning(warning, safeMetadata as Record<string, unknown>);
       }
     } else {
       console.warn(warning);
@@ -222,16 +228,16 @@ export class Boundary {
     }
   }
 
-  private initializeProvider(
+  private async initializeProvider(
     providerName: string,
     providerConfig: ProviderConfig
-  ): void {
+  ): Promise<void> {
     // Get adapter from config, adapters map, built-in adapters (lazy-loaded), or throw error
     let adapter = providerConfig.adapter ?? this.adapters.get(providerName);
 
-    // Auto-register built-in adapter if available (lazy-loaded on demand)
+    // Auto-register built-in adapter if available (lazy-loaded on demand, scoped to instance)
     if (!adapter) {
-      const builtinAdapter = getBuiltinAdapter(providerName);
+      const builtinAdapter = getBuiltinAdapter(providerName, this.adapterCache);
       if (builtinAdapter) {
         this.adapters.set(providerName, builtinAdapter);
         adapter = builtinAdapter;
@@ -245,7 +251,7 @@ export class Boundary {
     }
 
     // Validate adapter contract - fail fast if non-compliant
-    assertValidAdapter(adapter, providerName);
+    await assertValidAdapter(adapter, providerName);
 
     // Setup circuit breaker
     const circuitBreakerConfig = {
@@ -290,6 +296,7 @@ export class Boundary {
       retryStrategy,
       idempotencyResolver,
       observability: this.observability,
+      sanitizerOptions: this.config.observabilitySanitizer,
       timeout: this.config.defaults?.timeout ?? undefined,
       autoGenerateIdempotencyKeys:
         this.config.idempotency?.autoGenerateKeys ?? false,
@@ -303,13 +310,19 @@ export class Boundary {
 
   private createProviderClient(providerName: string): ProviderClient {
     const pipeline = this.pipelines.get(providerName)!;
-    const adapter = this.adapters.get(providerName)!;
+    const adapter = this.adapters.get(providerName);
+    if (!adapter) {
+      throw new Error(`Adapter not found for provider: ${providerName}`);
+    }
+    const boundary = this; // Capture for use in closures
+    const maxPages = 1000; // Maximum pages to prevent infinite loops
 
     const makeRequest = async <T>(
       method: string,
       endpoint: string,
-      options: any = {}
+      options: RequestOptions = {}
     ): Promise<NormalizedResponse<T>> => {
+      boundary.ensureStarted();
       return pipeline.execute<T>(endpoint, {
         ...options,
         method: method as any,
@@ -318,16 +331,25 @@ export class Boundary {
 
     const paginate = async function* <T>(
       endpoint: string,
-      options: any = {}
+      options: RequestOptions = {}
     ): AsyncGenerator<NormalizedResponse<T>> {
+      boundary.ensureStarted();
+      // Re-get adapter to ensure it's available (defensive)
+      const currentAdapter = boundary.adapters.get(providerName);
+      if (!currentAdapter) {
+        throw new Error(`Adapter not found for provider: ${providerName}`);
+      }
       let currentEndpoint = endpoint;
       let currentOptions = { ...options, method: "GET" as const };
       let hasNext = true;
+      let pageCount = 0;
+      const seenCursors = new Set<string>(); // Cycle detection per pagination call
 
-      const paginationStrategy = adapter.paginationStrategy();
+      const paginationStrategy = currentAdapter.paginationStrategy();
 
-      while (hasNext) {
+      while (hasNext && pageCount < maxPages) {
         const response = await makeRequest<T>("GET", currentEndpoint, currentOptions);
+        pageCount++;
 
         yield response;
 
@@ -335,6 +357,15 @@ export class Boundary {
         const cursor = response.meta.pagination?.cursor;
 
         if (hasNext && cursor) {
+          // Cycle detection: if we've seen this cursor before, we're in a loop
+          if (seenCursors.has(cursor)) {
+            throw new Error(
+              `Pagination cycle detected: cursor "${cursor}" was encountered twice. ` +
+              `This indicates a malformed pagination implementation. Stopping at page ${pageCount}.`
+            );
+          }
+          seenCursors.add(cursor);
+
           const next = paginationStrategy.buildNextRequest(
             currentEndpoint,
             currentOptions,
@@ -344,34 +375,43 @@ export class Boundary {
           currentOptions = next.options;
         }
       }
+
+      if (hasNext && pageCount >= maxPages) {
+        throw new Error(
+          `Pagination limit reached: ${maxPages} pages. ` +
+          `This may indicate an infinite pagination loop. Consider using a more specific query.`
+        );
+      }
     };
 
     return {
-      get: <T = unknown>(endpoint: string, options?: any) =>
+      get: <T = unknown>(endpoint: string, options?: RequestOptions) =>
         makeRequest<T>("GET", endpoint, options),
-      post: <T = unknown>(endpoint: string, options?: any) =>
+      post: <T = unknown>(endpoint: string, options?: RequestOptions) =>
         makeRequest<T>("POST", endpoint, options),
-      put: <T = unknown>(endpoint: string, options?: any) =>
+      put: <T = unknown>(endpoint: string, options?: RequestOptions) =>
         makeRequest<T>("PUT", endpoint, options),
-      patch: <T = unknown>(endpoint: string, options?: any) =>
+      patch: <T = unknown>(endpoint: string, options?: RequestOptions) =>
         makeRequest<T>("PATCH", endpoint, options),
-      delete: <T = unknown>(endpoint: string, options?: any) =>
+      delete: <T = unknown>(endpoint: string, options?: RequestOptions) =>
         makeRequest<T>("DELETE", endpoint, options),
-      paginate: <T = unknown>(endpoint: string, options?: any) =>
+      paginate: <T = unknown>(endpoint: string, options?: RequestOptions) =>
         paginate<T>(endpoint, options),
     };
   }
 
   getCircuitStatus(provider: string): CircuitBreakerStatus | null {
+    this.ensureStarted();
     const circuitBreaker = this.circuitBreakers.get(provider);
     return circuitBreaker?.getStatus() ?? null;
   }
 
-  registerProvider(
+  async registerProvider(
     name: string,
     adapter: ProviderAdapter,
     config: ProviderConfig
-  ): void {
+  ): Promise<void> {
+    this.ensureStarted();
     // Store adapter
     this.adapters.set(name, adapter);
     
@@ -386,8 +426,63 @@ export class Boundary {
       adapter, // Also store in config for consistency
     };
     
-    // Initialize provider
-    this.initializeProvider(name, this.config.providers[name]!);
+    // Initialize provider if already started
+    if (this.started) {
+      await this.initializeProvider(name, this.config.providers[name]!);
+    }
+  }
+
+  /**
+   * Async lifecycle start.
+   * Validates adapters (including async `authStrategy`) and initializes providers.
+   * Enforces deployment mode constraints (e.g., requiring `stateStorage` in distributed mode).
+   */
+  async start(): Promise<void> {
+    // Fail-closed: In distributed mode, StateStorage is REQUIRED
+    if (this.config.mode === "distributed" && !this.config.stateStorage) {
+      throw new Error(
+        "Boundary requires a configured stateStorage in 'distributed' mode. " +
+        "Provide a StateStorage implementation (e.g., Redis) for distributed deployments. " +
+        "If you intend to use local in-memory state, set mode to 'local' or omit the mode field."
+      );
+    }
+
+    // Fail-closed: Require StateStorage unless localUnsafe is explicitly true
+    // This prevents accidental use of in-memory state in production
+    if (!this.config.stateStorage && !this.config.localUnsafe && this.config.mode !== "local") {
+      throw new Error(
+        "Boundary requires a configured stateStorage unless 'localUnsafe' is set to true. " +
+        "For production deployments, provide a StateStorage implementation. " +
+        "For local development, explicitly set 'localUnsafe: true' to acknowledge the limitation."
+      );
+    }
+
+    // Initialize providers with async validation
+    if (this.config.providers) {
+      for (const [providerName, providerConfig] of Object.entries(this.config.providers)) {
+        await this.initializeProvider(providerName, providerConfig as ProviderConfig);
+      }
+    }
+
+    // If using in-memory state and not distributed, emit warning (only if localUnsafe is true)
+    if (this.config.mode !== "distributed" && this.config.localUnsafe) {
+      this.emitLocalStateWarning();
+    }
+
+    this.started = true;
+  }
+
+  /**
+   * Runtime guard: Ensures SDK is initialized before use.
+   * Throws synchronously if start() has not completed.
+   */
+  private ensureStarted(): void {
+    if (!this.started) {
+      throw new Error(
+        "Boundary SDK must be initialized before use. " +
+        "Call 'await Boundary.create(config)' and await the result before using any methods."
+      );
+    }
   }
 }
 

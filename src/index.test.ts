@@ -6,9 +6,9 @@ import { describe, it, expect } from "vitest";
 import { Boundary } from "./index.js";
 
 describe("Boundary - Built-in Adapter Auto-Registration", () => {
-  it("should auto-register GitHub adapter without explicit adapter parameter", () => {
+  it("should auto-register GitHub adapter without explicit adapter parameter", async () => {
     // This should not throw - GitHub adapter should be auto-registered
-    const boundary = new Boundary({
+    const boundary = await Boundary.create({
       github: {
         auth: { token: "test-token" },
       },
@@ -21,9 +21,9 @@ describe("Boundary - Built-in Adapter Auto-Registration", () => {
     expect((boundary as any).github).toBeDefined();
   });
 
-  it("should work with nested providers config", () => {
+  it("should work with nested providers config", async () => {
     // Nested config should also work
-    const boundary = new Boundary({
+    const boundary = await Boundary.create({
       providers: {
         github: {
           auth: { token: "test-token" },

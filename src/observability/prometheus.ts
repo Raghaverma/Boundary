@@ -8,8 +8,9 @@
  * ```typescript
  * const prometheus = new PrometheusObservability();
  *
- * const boundary = new Boundary({
+ * const boundary = await Boundary.create({
  *   observability: prometheus,
+ *   localUnsafe: true, // Required for local development
  *   // ... other config
  * });
  *

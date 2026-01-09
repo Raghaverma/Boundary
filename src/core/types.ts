@@ -193,6 +193,16 @@ export interface AuthToken {
   refreshToken?: string;
 }
 
+/**
+ * External state storage interface for persistence across processes.
+ * Implementations should provide get/set/del semantics, e.g. backed by Redis.
+ */
+export interface StateStorage {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string, ttlSeconds?: number): Promise<void>;
+  del(key: string): Promise<void>;
+}
+
 // ============================================================================
 // Provider Adapter Interface
 // ============================================================================
@@ -583,6 +593,27 @@ export interface BoundaryConfig {
     defaultLevel: IdempotencyLevel;
     autoGenerateKeys?: boolean;
   };
+  /**
+   * Deployment mode. If `distributed`, a `stateStorage` implementation is required.
+   */
+  mode?: "local" | "distributed";
+  /**
+   * Optional external state storage (e.g., Redis). Required in `distributed` mode.
+   */
+  stateStorage?: StateStorage;
+  /**
+   * Observability sanitizer options. Default redacted keys include
+   * `authorization`, `cookie`, `token`, `apiKey`, and `body`.
+   */
+  observabilitySanitizer?: {
+    redactedKeys?: string[];
+  };
+  /**
+   * Explicitly mark local state usage as allowed. If not set, a StateStorage
+   * implementation is required (fail-closed). This protects distributed
+   * deployments from accidental local-only defaults.
+   */
+  localUnsafe?: boolean;
   // Allow provider configs at top level for convenience
   [providerName: string]: unknown;
 }

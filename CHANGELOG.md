@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0] - 2025-01-09
+
+**This release establishes the long-term safety contract of the SDK.** All breaking changes are intentional and enforce safety by default.
+
+### Breaking Changes
+
+- **Constructor removed**: `new Boundary(config)` no longer works. Use `await Boundary.create(config)` instead. This enforces async initialization and prevents use before initialization.
+
+- **Mandatory initialization**: All SDK methods throw if called before `Boundary.create()` completes. This prevents undefined behavior from uninitialized state.
+
+- **StateStorage enforcement**: 
+  - `mode: "distributed"` **requires** a `StateStorage` implementation. Startup fails without it.
+  - Configurations without `stateStorage` require explicit `localUnsafe: true` to acknowledge the limitation.
+  - This prevents accidental use of in-memory state in production deployments.
+
+- **Node.js version requirement**: SDK now explicitly requires Node.js ≥18.0.0 (was implicit before). This is enforced via `engines` field in `package.json`.
+
+- **Typed request options**: `ProviderClient` methods now use strict `RequestOptions` types instead of `any`. Invalid options are caught at compile time.
+
+### Added
+
+- **Safety guarantees**:
+  - Fail-fast initialization enforcement
+  - Fail-closed state management
+  - Guaranteed secret redaction in all observability paths
+  - No silent degradation - all failures are explicit
+
+- **Pagination safety**: Cycle detection and max page limit (1000 pages) prevent infinite loops from malformed adapters.
+
+- **Adapter validation safety**: Validation uses fake test tokens to prevent side effects during adapter checks.
+
+- **Instance-scoped adapter cache**: Prevents config sharing across Boundary instances.
+
+### Changed
+
+- All examples and documentation updated to use `Boundary.create()` pattern.
+- Enhanced header sanitization to handle variations (e.g., "X-API-Key" matches "apikey").
+- Improved error messages for state management failures.
+
+### Fixed
+
+- Secrets no longer leak through observability (logs, errors, metrics).
+- Adapter cache properly scoped per instance.
+- Pagination cannot infinite-loop.
+
 ## [Unreleased]
 
 ### Added

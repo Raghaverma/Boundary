@@ -2,25 +2,40 @@
 
 ## Boundary Class
 
-### Constructor
+### create (Static Factory Method)
 
 ```typescript
-new Boundary(config: BoundaryConfig, adapters?: Map<string, ProviderAdapter>)
+static create(config: BoundaryConfig, adapters?: Map<string, ProviderAdapter>): Promise<Boundary>
 ```
 
-Creates a new Boundary instance with configured providers.
+Creates and initializes a new Boundary instance. **This is the only way to create Boundary instances.**
 
 **Parameters:**
 - `config`: Configuration object with provider settings and global options
 - `adapters`: Optional map of provider adapters (built-in adapters auto-register)
 
-**Returns:** `Boundary` instance
+**Returns:** `Promise<Boundary>` - Resolves after async initialization completes
 
 **Throws:**
 - `Error` if provider configuration is invalid
 - `Error` if no adapter found for a configured provider (and not built-in)
+- `Error` if `mode: "distributed"` without `stateStorage`
+- `Error` if configuration lacks `stateStorage` and `localUnsafe: true` is not set
+- `Error` if adapter validation fails
 
 **Stability:** Stable
+
+**Example:**
+```typescript
+const boundary = await Boundary.create({
+  github: {
+    auth: { token: process.env.GITHUB_TOKEN },
+  },
+  localUnsafe: true, // Required for local development
+});
+```
+
+**Note:** The constructor is private. Use `Boundary.create()` instead.
 
 ### getCircuitStatus
 
@@ -40,20 +55,22 @@ Returns the current circuit breaker status for a provider.
 ### registerProvider
 
 ```typescript
-registerProvider(name: string, adapter: ProviderAdapter, config: ProviderConfig): void
+registerProvider(name: string, adapter: ProviderAdapter, config: ProviderConfig): Promise<void>
 ```
 
-Registers a custom provider adapter at runtime.
+Registers a custom provider adapter at runtime. **Requires initialization** - throws if called before `Boundary.create()` completes.
 
 **Parameters:**
 - `name`: Provider identifier
 - `adapter`: Provider adapter implementation
 - `config`: Provider configuration including auth
 
-**Returns:** `void`
+**Returns:** `Promise<void>` - Resolves after provider is initialized
 
 **Throws:**
+- `Error` if SDK not initialized (call `Boundary.create()` first)
 - `Error` if provider name conflicts with existing provider
+- `Error` if adapter validation fails
 
 **Stability:** Stable
 

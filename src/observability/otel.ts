@@ -8,11 +8,12 @@
  * ```typescript
  * import { trace, metrics } from "@opentelemetry/api";
  *
- * const boundary = new Boundary({
+ * const boundary = await Boundary.create({
  *   observability: new OpenTelemetryObservability({
  *     tracer: trace.getTracer("boundary-sdk"),
  *     meter: metrics.getMeter("boundary-sdk"),
  *   }),
+ *   localUnsafe: true, // Required for local development
  *   // ... other config
  * });
  * ```

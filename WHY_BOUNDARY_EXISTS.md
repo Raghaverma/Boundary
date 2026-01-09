@@ -333,10 +333,11 @@ Here is the same use case using Boundary:
 ```typescript
 import { Boundary } from 'boundary-sdk';
 
-const boundary = new Boundary({
+const boundary = await Boundary.create({
   github: {
     auth: { token: process.env.GITHUB_TOKEN },
   },
+  localUnsafe: true, // Required for local development
 });
 
 async function fetchAllRepos(): Promise<Repo[]> {

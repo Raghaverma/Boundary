@@ -1,6 +1,6 @@
 {
   "name": "boundary-sdk",
-  "version": "1.0.2",
+  "version": "0.1.0",
   "description": "API Normalization SDK - A TypeScript-first SDK that enforces a single stable contract across all third-party API providers",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -12,7 +12,10 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE.md"
   ],
   "sideEffects": false,
   "scripts": {
@@ -36,6 +39,9 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/Raghaverma/Boundary"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

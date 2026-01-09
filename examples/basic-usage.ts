@@ -8,8 +8,8 @@ import { ConsoleObservability } from "../src/observability/console.js";
 import { FileSystemSchemaStorage } from "../src/validation/schema-storage.js";
 
 async function main() {
-  // Initialize Boundary
-  const boundary = new Boundary(
+  // Initialize Boundary - MUST use Boundary.create() for async initialization
+  const boundary = await Boundary.create(
     {
       providers: {
         github: {
@@ -50,8 +50,8 @@ async function main() {
         defaultLevel: "SAFE" as const,
         autoGenerateKeys: true,
       },
-    },
-    new Map([["github", new GitHubAdapter()]])
+      localUnsafe: true, // Required for local development without StateStorage
+    }
   );
 
   try {
