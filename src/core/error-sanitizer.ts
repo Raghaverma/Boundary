@@ -25,23 +25,6 @@ const VALID_CATEGORIES: readonly BoundaryErrorCategory[] = [
   "validation",
 ] as const;
 
-/**
- * Metadata keys that should be dropped for security.
- * These could leak sensitive information or provider internals.
- */
-const UNSAFE_METADATA_KEYS: readonly string[] = [
-  "password",
-  "secret",
-  "token",
-  "apiKey",
-  "api_key",
-  "authorization",
-  "cookie",
-  "session",
-  "credentials",
-  "privateKey",
-  "private_key",
-] as const;
 
 /**
  * Checks if a category is a valid BoundaryErrorCategory.
@@ -112,40 +95,6 @@ function inferRetryable(category: BoundaryErrorCategory, error: unknown): boolea
   return false;
 }
 
-/**
- * Sanitizes metadata by removing unsafe keys.
- */
-function sanitizeMetadata(
-  metadata: Record<string, unknown> | undefined
-): Record<string, unknown> | undefined {
-  if (!metadata || typeof metadata !== "object") {
-    return undefined;
-  }
-
-  const sanitized: Record<string, unknown> = {};
-  const lowerUnsafeKeys = UNSAFE_METADATA_KEYS.map((k) => k.toLowerCase());
-
-  for (const [key, value] of Object.entries(metadata)) {
-    const lowerKey = key.toLowerCase();
-
-    // Skip unsafe keys
-    if (lowerUnsafeKeys.some((unsafeKey) => lowerKey.includes(unsafeKey))) {
-      continue;
-    }
-
-    // Recursively sanitize nested objects
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      const sanitizedValue = sanitizeMetadata(value as Record<string, unknown>);
-      if (sanitizedValue && Object.keys(sanitizedValue).length > 0) {
-        sanitized[key] = sanitizedValue;
-      }
-    } else {
-      sanitized[key] = value;
-    }
-  }
-
-  return Object.keys(sanitized).length > 0 ? sanitized : undefined;
-}
 
 /**
  * Sanitizes an adapter error output to ensure strict BoundaryError compliance.
