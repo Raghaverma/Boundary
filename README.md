@@ -1,5 +1,7 @@
 # Boundary
 
+> **⚠️ v2.0.0 establishes the safe-by-default contract. Previous versions (<2.0.0) are deprecated and contain unsafe defaults. Upgrade to >=2.0.0.**
+
 A TypeScript SDK that normalizes third-party API interactions through a unified request pipeline, enforcing consistent error handling, rate limiting, and response shapes across providers.
 
 ## Problem Statement
@@ -117,7 +119,7 @@ Each configured provider exposes a client with:
 
 ## Project Status
 
-**v0.1.0** - Production-ready safety contract established. Core functionality is stable. Provider coverage is expanding. API stability guaranteed for 0.x releases.
+**v2.0.0** - Production-ready safety contract established. Core functionality is stable. Provider coverage is expanding. API stability guaranteed for 2.x releases.
 
 ## License
 

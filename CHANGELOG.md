@@ -5,9 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2025-01-09
+## [2.0.0] - 2025-01-09
 
 **This release establishes the long-term safety contract of the SDK.** All breaking changes are intentional and enforce safety by default.
+
+**⚠️ BREAKING: This is a major version release with breaking changes. See migration guide below.**
 
 ### Breaking Changes
 
@@ -49,6 +51,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Secrets no longer leak through observability (logs, errors, metrics).
 - Adapter cache properly scoped per instance.
 - Pagination cannot infinite-loop.
+
+### Migration from 1.x
+
+**Required changes:**
+
+1. **Replace constructor with factory method:**
+   ```typescript
+   // ❌ OLD (1.x)
+   const boundary = new Boundary({ ... });
+   
+   // ✅ NEW (2.0.0)
+   const boundary = await Boundary.create({ ... });
+   ```
+
+2. **Add state management configuration:**
+   ```typescript
+   // For local development
+   const boundary = await Boundary.create({
+     ...config,
+     localUnsafe: true, // Required for local dev
+   });
+   
+   // For production/distributed
+   const boundary = await Boundary.create({
+     ...config,
+     mode: "distributed",
+     stateStorage: new YourStateStorage(), // Required
+   });
+   ```
+
+3. **Ensure Node.js ≥18.0.0** (now enforced via `engines` field)
+
+4. **Update TypeScript types:** `ProviderClient` methods now use strict `RequestOptions` instead of `any`
 
 ## [Unreleased]
 

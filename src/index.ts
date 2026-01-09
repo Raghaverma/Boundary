@@ -10,7 +10,7 @@ import type {
   ObservabilityAdapter,
   RequestOptions,
 } from "./core/types.js";
-import { RequestPipeline } from "./core/pipeline.js";
+import { RequestPipeline, type PipelineConfig } from "./core/pipeline.js";
 import { ProviderCircuitBreaker } from "./strategies/circuit-breaker.js";
 import { RateLimiter } from "./strategies/rate-limit.js";
 import { RetryStrategy } from "./strategies/retry.js";
@@ -287,7 +287,7 @@ export class Boundary {
     const retryStrategy = new RetryStrategy(retryConfig, idempotencyResolver);
 
     // Create pipeline
-    const pipeline = new RequestPipeline({
+    const pipelineConfig: PipelineConfig = {
       provider: providerName,
       adapter,
       authConfig: providerConfig.auth,
@@ -296,11 +296,14 @@ export class Boundary {
       retryStrategy,
       idempotencyResolver,
       observability: this.observability,
-      sanitizerOptions: this.config.observabilitySanitizer,
       timeout: this.config.defaults?.timeout ?? undefined,
       autoGenerateIdempotencyKeys:
         this.config.idempotency?.autoGenerateKeys ?? false,
-    });
+      ...(this.config.observabilitySanitizer
+        ? { sanitizerOptions: this.config.observabilitySanitizer }
+        : {}),
+    };
+    const pipeline = new RequestPipeline(pipelineConfig);
 
     this.pipelines.set(providerName, pipeline);
 
@@ -340,7 +343,7 @@ export class Boundary {
         throw new Error(`Adapter not found for provider: ${providerName}`);
       }
       let currentEndpoint = endpoint;
-      let currentOptions = { ...options, method: "GET" as const };
+      let currentOptions: RequestOptions = { ...options, method: "GET" };
       let hasNext = true;
       let pageCount = 0;
       const seenCursors = new Set<string>(); // Cycle detection per pagination call
