@@ -90,6 +90,10 @@ export class BoundaryError extends Error {
   /**
    * Optional metadata for debugging.
    * MAY contain provider-specific details, but MUST NOT be required for error handling.
+   * 
+   * SECURITY: Metadata is sanitized at error construction time to remove sensitive fields.
+   * This ensures errors are safe to propagate even if observability is bypassed.
+   * Sensitive keys (password, secret, token, apiKey, etc.) are automatically redacted.
    */
   metadata?: Record<string, unknown>;
 

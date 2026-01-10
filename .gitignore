@@ -7,4 +7,6 @@ dist/
 .boundary/
 coverage/
 *.tsbuildinfo
+.claude/
+*.tgz
 

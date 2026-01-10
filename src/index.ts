@@ -383,42 +383,52 @@ export class Boundary {
       }
       let currentEndpoint = endpoint;
       let currentOptions: RequestOptions = { ...options, method: "GET" };
-      let hasNext = true;
       let pageCount = 0;
       const seenCursors = new Set<string>(); // Cycle detection per pagination call
 
       const paginationStrategy = currentAdapter.paginationStrategy();
 
-      while (hasNext && pageCount < maxPages) {
+      // Fail-fast: enforce max page limit deterministically
+      // Loop condition ensures we never exceed maxPages requests
+      // This prevents infinite loops and ensures bounded execution
+      while (pageCount < maxPages) {
         const response = await makeRequest<T>("GET", currentEndpoint, currentOptions);
         pageCount++;
 
         yield response;
 
-        hasNext = response.meta.pagination?.hasNext ?? false;
+        const hasNext = response.meta.pagination?.hasNext ?? false;
         const cursor = response.meta.pagination?.cursor;
 
-        if (hasNext && cursor) {
-          // Cycle detection: if we've seen this cursor before, we're in a loop
-          if (seenCursors.has(cursor)) {
-            throw new Error(
-              `Pagination cycle detected: cursor "${cursor}" was encountered twice. ` +
-              `This indicates a malformed pagination implementation. Stopping at page ${pageCount}.`
-            );
-          }
-          seenCursors.add(cursor);
-
-          const next = paginationStrategy.buildNextRequest(
-            currentEndpoint,
-            currentOptions,
-            cursor
-          );
-          currentEndpoint = next.endpoint;
-          currentOptions = next.options;
+        if (!hasNext || !cursor) {
+          // Natural termination: no more pages
+          break;
         }
+
+        // Cycle detection: if we've seen this cursor before, we're in a loop
+        // Check BEFORE making next request (fail-fast)
+        if (seenCursors.has(cursor)) {
+          throw new Error(
+            `Pagination cycle detected: cursor "${cursor}" was encountered twice. ` +
+            `This indicates a malformed pagination implementation. Stopping at page ${pageCount}.`
+          );
+        }
+        seenCursors.add(cursor);
+
+        const next = paginationStrategy.buildNextRequest(
+          currentEndpoint,
+          currentOptions,
+          cursor
+        );
+        currentEndpoint = next.endpoint;
+        currentOptions = next.options;
       }
 
-      if (hasNext && pageCount >= maxPages) {
+      // Final check: if we exited loop due to limit and still have more pages, throw
+      // This ensures we fail explicitly when hitting the limit, not silently stop
+      if (pageCount >= maxPages) {
+        // Check if there would be more pages (requires one more request to know)
+        // Since we can't know without making the request, we throw based on limit being reached
         throw new Error(
           `Pagination limit reached: ${maxPages} pages. ` +
           `This may indicate an infinite pagination loop. Consider using a more specific query.`

@@ -15,6 +15,55 @@
 import { BoundaryError, type BoundaryErrorCategory } from "./types.js";
 
 /**
+ * Sensitive keys that must be redacted from error metadata.
+ * These keys may contain secrets that could leak through error propagation.
+ */
+const SENSITIVE_METADATA_KEYS: readonly string[] = [
+  "password",
+  "secret",
+  "token",
+  "apiKey",
+  "api_key",
+  "authorization",
+  "cookie",
+  "session",
+  "credentials",
+  "privateKey",
+  "private_key",
+  "access_token",
+  "refresh_token",
+] as const;
+
+/**
+ * Sanitizes error metadata by redacting sensitive fields.
+ * This is called at the error layer (not just observability) to ensure
+ * errors are safe to propagate even if observability fails or is bypassed.
+ */
+function sanitizeErrorMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {};
+  const lowerSensitiveKeys = SENSITIVE_METADATA_KEYS.map((k) => k.toLowerCase());
+
+  for (const [key, value] of Object.entries(metadata)) {
+    const lowerKey = key.toLowerCase();
+
+    // Redact sensitive keys
+    if (lowerSensitiveKeys.some((sensitiveKey) => lowerKey.includes(sensitiveKey))) {
+      sanitized[key] = "[REDACTED]";
+      continue;
+    }
+
+    // Recursively sanitize nested objects
+    if (value && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date)) {
+      sanitized[key] = sanitizeErrorMetadata(value as Record<string, unknown>);
+    } else {
+      sanitized[key] = value;
+    }
+  }
+
+  return sanitized;
+}
+
+/**
  * List of valid canonical error categories.
  */
 const VALID_CATEGORIES: readonly BoundaryErrorCategory[] = [
@@ -146,9 +195,12 @@ export function sanitizeBoundaryError(
   // Provider MUST match expected provider
   const provider = expectedProvider;
 
-  // Extract metadata as-is (observability layer will sanitize for logging)
-  // Error-sanitizer's job is structural validation, not data sanitization
-  const metadata = err.metadata as Record<string, unknown> | undefined;
+  // Sanitize metadata at error layer (not just observability layer)
+  // REASON: Metadata comes from adapters (untrusted source) and may contain secrets.
+  // We sanitize here to ensure no secrets leak even if observability is bypassed or fails.
+  // This is a security boundary: errors must be safe to propagate regardless of observability state.
+  const rawMetadata = err.metadata as Record<string, unknown> | undefined;
+  const metadata = rawMetadata ? sanitizeErrorMetadata(rawMetadata) : undefined;
 
   // Extract retryAfter if present and valid
   let retryAfter: Date | undefined;

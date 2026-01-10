@@ -269,14 +269,19 @@ export class RequestPipeline {
         timestamp: new Date(),
       };
 
-      // Sanitize error metadata before logging
+      // Sanitize error metadata before logging (defense-in-depth)
+      // NOTE: Error metadata is already sanitized at error construction time (error-sanitizer.ts),
+      // but we sanitize again here for observability to ensure no secrets leak in logs.
+      // This is defense-in-depth: error layer protects propagation, observability layer protects logs.
       try {
         const sanitizedError = { ...boundaryError } as any;
         if (sanitizedError.metadata) {
           sanitizedError.metadata = sanitizeObject(sanitizedError.metadata, this.config.sanitizerOptions) as Record<string, unknown>;
         }
         errorContext = { ...errorContext, error: sanitizedError };
-      } catch {}
+      } catch {
+        // If sanitization fails, use original error (metadata already sanitized at error layer)
+      }
 
       // Log error (sanitized) - non-blocking observability
       this.safelyBroadcastObservability(
