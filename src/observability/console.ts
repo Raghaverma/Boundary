@@ -1,6 +1,4 @@
-/**
- * Console observability adapter - JSON structured logs to stdout
- */
+
 
 import type {
   ObservabilityAdapter,

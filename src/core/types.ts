@@ -1,10 +1,8 @@
-/**
- * Core type definitions for the Boundary SDK
- */
 
-// ============================================================================
-// Unified Response Shape
-// ============================================================================
+
+
+
+
 
 export interface NormalizedResponse<T = unknown> {
   data: T;
@@ -32,74 +30,33 @@ export interface PaginationInfo {
   total?: number;
 }
 
-// ============================================================================
-// Error Contract
-// ============================================================================
 
-/**
- * Canonical Boundary error categories.
- * These are the ONLY error categories that may escape adapters.
- * Provider-specific error semantics MUST be mapped to these categories.
- */
+
+
+
+
 export type BoundaryErrorCategory =
-  | "auth"        // Authentication/authorization failures
-  | "rate_limit"  // Rate limiting violations
-  | "network"     // Network-level failures (timeouts, connection errors)
-  | "provider"    // Provider service errors (5xx, provider-specific issues)
-  | "validation"; // Request validation errors (4xx, except auth)
+  | "auth"        
+  | "rate_limit"  
+  | "network"     
+  | "provider"    
+  | "validation"; 
 
-/**
- * Canonical Boundary error class.
- *
- * INVARIANTS:
- * - MUST be the only error type that escapes adapters
- * - MUST NOT contain provider-specific fields
- * - MUST map all provider errors to canonical categories
- * - MUST provide retryable flag for retry strategy
- *
- * GUARANTEES:
- * - category is always one of the canonical categories
- * - retryable accurately reflects whether retry is safe
- * - provider identifies the source provider
- * - message is human-readable and actionable
- * - Proper Error prototype chain with stack traces
- * - instanceof BoundaryError works correctly at runtime
- *
- * MUST NEVER LEAK:
- * - Provider-specific error codes
- * - Provider-specific error structures
- * - Raw provider error objects (except in metadata for debugging)
- */
+
 export class BoundaryError extends Error {
-  /**
-   * Canonical error category. All provider errors MUST map to one of these.
-   */
+  
   category: BoundaryErrorCategory;
 
-  /**
-   * Whether this error is safe to retry.
-   * MUST be accurate - incorrect values break retry logic.
-   */
+  
   retryable: boolean;
 
-  /**
-   * Provider identifier (e.g., "github", "stripe").
-   */
+  
   provider: string;
 
-  /**
-   * Optional metadata for debugging.
-   * MAY contain provider-specific details, but MUST NOT be required for error handling.
-   * 
-   * SECURITY: Metadata is sanitized at error construction time to remove sensitive fields.
-   * This ensures errors are safe to propagate even if observability is bypassed.
-   * Sensitive keys (password, secret, token, apiKey, etc.) are automatically redacted.
-   */
+  
   metadata?: Record<string, unknown>;
 
-  /**
-   * Optional retry-after timestamp for rate limit errors.
-   */
+  
   retryAfter?: Date;
 
   constructor(
@@ -116,7 +73,7 @@ export class BoundaryError extends Error {
     this.provider = provider;
     this.retryable = retryable;
 
-    // Only assign optional properties if defined (exactOptionalPropertyTypes compatibility)
+    
     if (metadata !== undefined) {
       this.metadata = metadata;
     }
@@ -124,17 +81,14 @@ export class BoundaryError extends Error {
       this.retryAfter = retryAfter;
     }
 
-    // Maintain proper stack trace in V8 environments (Node.js, Chrome)
+    
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, BoundaryError);
     }
   }
 }
 
-/**
- * @deprecated Use BoundaryError instead. This type is kept for backward compatibility
- * during migration and will be removed.
- */
+
 export type ErrorType =
   | "AUTH_ERROR"
   | "RATE_LIMIT"
@@ -143,10 +97,7 @@ export type ErrorType =
   | "NETWORK_ERROR"
   | "CIRCUIT_OPEN";
 
-/**
- * @deprecated Use BoundaryError instead. This type is kept for backward compatibility
- * during migration and will be removed.
- */
+
 export interface NormalizedError extends Error {
   type: ErrorType;
   provider: string;
@@ -156,9 +107,9 @@ export interface NormalizedError extends Error {
   retryAfter?: Date;
 }
 
-// ============================================================================
-// Request Types
-// ============================================================================
+
+
+
 
 export interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
@@ -198,15 +149,15 @@ export interface ErrorContext {
   timestamp: Date;
 }
 
-// ============================================================================
-// Authentication
-// ============================================================================
+
+
+
 
 export interface AuthConfig {
   token?: string;
   apiKey?: string;
-  apiKeyHeader?: string; // e.g., "X-API-Key"
-  apiKeyQuery?: string; // e.g., "api_key"
+  apiKeyHeader?: string; 
+  apiKeyQuery?: string; 
   username?: string;
   password?: string;
   clientId?: string;
@@ -221,19 +172,16 @@ export interface AuthToken {
   refreshToken?: string;
 }
 
-/**
- * External state storage interface for persistence across processes.
- * Implementations should provide get/set/del semantics, e.g. backed by Redis.
- */
+
 export interface StateStorage {
   get(key: string): Promise<string | null>;
   set(key: string, value: string, ttlSeconds?: number): Promise<void>;
   del(key: string): Promise<void>;
 }
 
-// ============================================================================
-// Provider Adapter Interface
-// ============================================================================
+
+
+
 
 export interface RawResponse {
   status: number;
@@ -241,10 +189,7 @@ export interface RawResponse {
   body: unknown;
 }
 
-/**
- * Adapter input for building requests.
- * Contains all information needed to construct a provider-specific request.
- */
+
 export interface AdapterInput {
   endpoint: string;
   options: RequestOptions;
@@ -252,10 +197,7 @@ export interface AdapterInput {
   baseUrl?: string;
 }
 
-/**
- * Built request ready for HTTP execution.
- * Adapter builds this, but pipeline executes it.
- */
+
 export interface BuiltRequest {
   url: string;
   method: string;
@@ -263,175 +205,31 @@ export interface BuiltRequest {
   body?: string | undefined;
 }
 
-/**
- * Authoritative Provider Adapter Contract.
- * 
- * This contract defines the behavior that ALL adapters MUST implement.
- * It is behavior-focused, not data-focused - adapters transform between
- * Boundary's normalized world and provider-specific implementations.
- * 
- * INVARIANTS:
- * - Adapters MUST NOT leak provider-specific types or structures
- * - Adapters MUST map all provider errors to BoundaryError
- * - Adapters MUST normalize all responses to NormalizedResponse
- * - Adapters MUST NOT contain provider-specific conditionals in core
- * 
- * If an adapter cannot satisfy this contract, it MUST NOT compile.
- */
+
 export interface ProviderAdapter {
-  /**
-   * Builds a request from normalized input.
-   * 
-   * ASSUMES:
-   * - Input is valid Boundary request structure
-   * - Auth token is already obtained via authStrategy
-   * 
-   * GUARANTEES:
-   * - Returns a complete, executable HTTP request
-   * - Request includes all necessary provider-specific headers
-   * - Request URL is fully qualified
-   * - Request body is serialized if needed
-   * 
-   * MUST NEVER LEAK:
-   * - Provider-specific request building logic to core
-   * - Provider-specific authentication mechanisms
-   * 
-   * @param input Normalized request input
-   * @returns Built request ready for HTTP execution
-   */
+  
   buildRequest(input: AdapterInput): BuiltRequest;
 
-  /**
-   * Parses a raw provider response into normalized form.
-   * 
-   * ASSUMES:
-   * - Response is from the provider's API
-   * - Response structure matches provider's format
-   * 
-   * GUARANTEES:
-   * - Returns NormalizedResponse with canonical structure
-   * - Extracts rate limit information correctly
-   * - Extracts pagination information correctly
-   * - Handles all valid response status codes
-   * 
-   * MUST NEVER LEAK:
-   * - Provider-specific response fields
-   * - Provider-specific data structures
-   * - Provider-specific metadata
-   * 
-   * @param raw Raw response from provider
-   * @returns Normalized response
-   * @throws BoundaryError if response cannot be normalized
-   */
+  
   parseResponse(raw: RawResponse): NormalizedResponse;
 
-  /**
-   * Parses a provider error into canonical BoundaryError.
-   * 
-   * ASSUMES:
-   * - Error is from provider API or network layer
-   * - Error may be in provider-specific format
-   * 
-   * GUARANTEES:
-   * - Returns BoundaryError with canonical category
-   * - Maps all provider errors to one of: auth, rate_limit, network, provider, validation
-   * - Sets retryable flag accurately
-   * - Provides actionable error message
-   * - NEVER returns raw provider error
-   * 
-   * MUST NEVER LEAK:
-   * - Provider-specific error codes
-   * - Provider-specific error structures
-   * - Provider-specific error messages (must be normalized)
-   * 
-   * CRITICAL: This is the ONLY place provider errors may be handled.
-   * Core code MUST NOT branch on provider-specific error semantics.
-   * 
-   * @param raw Raw error from provider or network
-   * @returns Canonical BoundaryError
-   */
+  
   parseError(raw: unknown): BoundaryError;
 
-  /**
-   * Authentication strategy for this provider.
-   * 
-   * ASSUMES:
-   * - AuthConfig contains valid credentials for provider
-   * 
-   * GUARANTEES:
-   * - Returns valid AuthToken if credentials are valid
-   * - Throws BoundaryError with category "auth" if authentication fails
-   * - Handles token refresh if applicable
-   * 
-   * MUST NEVER LEAK:
-   * - Provider-specific authentication mechanisms
-   * - Provider-specific token formats
-   * 
-   * @param config Authentication configuration
-   * @returns Authentication token
-   * @throws BoundaryError with category "auth" on failure
-   */
+  
   authStrategy(config: AuthConfig): Promise<AuthToken>;
 
-  /**
-   * Rate limit policy for extracting rate limit information.
-   * 
-   * ASSUMES:
-   * - Headers contain provider-specific rate limit information
-   * 
-   * GUARANTEES:
-   * - Returns RateLimitInfo with accurate limit, remaining, and reset time
-   * - Handles missing headers gracefully (returns defaults)
-   * - Normalizes provider-specific rate limit formats
-   * 
-   * MUST NEVER LEAK:
-   * - Provider-specific rate limit header names
-   * - Provider-specific rate limit formats
-   * 
-   * @param headers Response headers
-   * @returns Normalized rate limit information
-   */
+  
   rateLimitPolicy(headers: Headers): RateLimitInfo;
 
-  /**
-   * Pagination strategy for this provider.
-   * 
-   * ASSUMES:
-   * - Response may contain pagination information
-   * 
-   * GUARANTEES:
-   * - Correctly identifies if more pages exist
-   * - Extracts cursor/token for next page
-   * - Builds next request correctly
-   * 
-   * MUST NEVER LEAK:
-   * - Provider-specific pagination mechanisms
-   * - Provider-specific pagination formats
-   * 
-   * @returns Pagination strategy implementation
-   */
+  
   paginationStrategy(): PaginationStrategy;
 
-  /**
-   * Idempotency configuration for this provider.
-   * 
-   * ASSUMES:
-   * - Provider has specific idempotency requirements
-   * 
-   * GUARANTEES:
-   * - Returns accurate idempotency levels for operations
-   * - Identifies safe operations correctly
-   * - Identifies unsafe operations correctly
-   * 
-   * @returns Idempotency configuration
-   */
+  
   getIdempotencyConfig(): IdempotencyConfig;
 }
 
-/**
- * @deprecated Legacy adapter interface. Use ProviderAdapter instead.
- * Kept for backward compatibility during migration.
- */
+
 export interface LegacyProviderAdapter {
   authenticate(config: AuthConfig): Promise<AuthToken>;
   makeRequest(
@@ -446,25 +244,25 @@ export interface LegacyProviderAdapter {
   getIdempotencyConfig(): IdempotencyConfig;
 }
 
-// ============================================================================
-// Idempotency
-// ============================================================================
+
+
+
 
 export enum IdempotencyLevel {
-  SAFE = "SAFE", // Always safe to retry (GET /users)
-  IDEMPOTENT = "IDEMPOTENT", // Safe if repeated (PUT /users/123)
-  CONDITIONAL = "CONDITIONAL", // Safe with idempotency key (POST /payments with Idempotency-Key header)
-  UNSAFE = "UNSAFE", // Never retry (POST /send-email)
+  SAFE = "SAFE", 
+  IDEMPOTENT = "IDEMPOTENT", 
+  CONDITIONAL = "CONDITIONAL", 
+  UNSAFE = "UNSAFE", 
 }
 
 export interface IdempotencyConfig {
-  defaultSafeOperations: Set<string>; // e.g., ["GET", "HEAD", "OPTIONS"]
-  operationOverrides: Map<string, IdempotencyLevel>; // e.g., "POST /repos/:owner/:repo/pulls" -> CONDITIONAL
+  defaultSafeOperations: Set<string>; 
+  operationOverrides: Map<string, IdempotencyLevel>; 
 }
 
-// ============================================================================
-// Pagination
-// ============================================================================
+
+
+
 
 export interface PaginationStrategy {
   extractCursor(response: RawResponse): string | null;
@@ -477,23 +275,23 @@ export interface PaginationStrategy {
   ): { endpoint: string; options: RequestOptions };
 }
 
-// ============================================================================
-// Circuit Breaker
-// ============================================================================
+
+
+
 
 export enum CircuitState {
-  CLOSED = "CLOSED", // Normal operation
-  OPEN = "OPEN", // Failing, reject immediately
-  HALF_OPEN = "HALF_OPEN", // Testing recovery
+  CLOSED = "CLOSED", 
+  OPEN = "OPEN", 
+  HALF_OPEN = "HALF_OPEN", 
 }
 
 export interface CircuitBreakerConfig {
-  failureThreshold: number; // Open after N failures (default: 5)
-  successThreshold: number; // Close after N successes in HALF_OPEN (default: 2)
-  timeout: number; // Time in OPEN before HALF_OPEN (default: 60000ms)
-  volumeThreshold: number; // Min requests before circuit can open (default: 10)
-  rollingWindowMs: number; // Error rate calculation window (default: 60000ms)
-  errorThresholdPercentage: number; // Open if error rate exceeds this (default: 50)
+  failureThreshold: number; 
+  successThreshold: number; 
+  timeout: number; 
+  volumeThreshold: number; 
+  rollingWindowMs: number; 
+  errorThresholdPercentage: number; 
 }
 
 export interface CircuitBreakerStatus {
@@ -504,31 +302,31 @@ export interface CircuitBreakerStatus {
   nextAttempt: Date | null;
 }
 
-// ============================================================================
-// Rate Limiting
-// ============================================================================
+
+
+
 
 export interface RateLimitConfig {
   tokensPerSecond: number;
   maxTokens: number;
   adaptiveBackoff: boolean;
-  queueSize?: number; // Max queued requests when at limit
+  queueSize?: number; 
 }
 
-// ============================================================================
-// Retry
-// ============================================================================
+
+
+
 
 export interface RetryConfig {
   maxRetries: number;
-  baseDelay: number; // Base delay in ms
-  maxDelay: number; // Max delay in ms
+  baseDelay: number; 
+  maxDelay: number; 
   jitter: boolean;
 }
 
-// ============================================================================
-// Schema Validation
-// ============================================================================
+
+
+
 
 export interface Schema {
   type: string;
@@ -569,9 +367,9 @@ export interface SchemaStorage {
   list(provider: string): Promise<SchemaMetadata[]>;
 }
 
-// ============================================================================
-// Observability
-// ============================================================================
+
+
+
 
 export interface Metric {
   name: string;
@@ -588,13 +386,13 @@ export interface ObservabilityAdapter {
   recordMetric(metric: Metric): void;
 }
 
-// ============================================================================
-// Configuration
-// ============================================================================
+
+
+
 
 export interface ProviderConfig {
   auth: AuthConfig;
-  adapter?: ProviderAdapter; // Adapter can be provided in config
+  adapter?: ProviderAdapter; 
   baseUrl?: string;
   retry?: Partial<RetryConfig>;
   circuitBreaker?: Partial<CircuitBreakerConfig>;
@@ -621,34 +419,23 @@ export interface BoundaryConfig {
     defaultLevel: IdempotencyLevel;
     autoGenerateKeys?: boolean;
   };
-  /**
-   * Deployment mode. If `distributed`, a `stateStorage` implementation is required.
-   */
+  
   mode?: "local" | "distributed";
-  /**
-   * Optional external state storage (e.g., Redis). Required in `distributed` mode.
-   */
+  
   stateStorage?: StateStorage;
-  /**
-   * Observability sanitizer options. Default redacted keys include
-   * `authorization`, `cookie`, `token`, `apiKey`, and `body`.
-   */
+  
   observabilitySanitizer?: {
     redactedKeys?: string[];
   };
-  /**
-   * Explicitly mark local state usage as allowed. If not set, a StateStorage
-   * implementation is required (fail-closed). This protects distributed
-   * deployments from accidental local-only defaults.
-   */
+  
   localUnsafe?: boolean;
-  // Allow provider configs at top level for convenience
+  
   [providerName: string]: unknown;
 }
 
-// ============================================================================
-// Versioning
-// ============================================================================
+
+
+
 
 import packageJson from "../../package.json";
 export const SDK_VERSION = packageJson.version;

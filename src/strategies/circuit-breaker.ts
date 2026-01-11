@@ -1,6 +1,4 @@
-/**
- * Circuit breaker implementation with state machine
- */
+
 
 import {
   CircuitState,
@@ -9,11 +7,7 @@ import {
   BoundaryError,
 } from "../core/types.js";
 
-/**
- * CircuitOpenError is thrown when a circuit breaker is in OPEN state.
- * Extends BoundaryError to maintain proper error hierarchy and enable
- * runtime instanceof checks across the pipeline.
- */
+
 export class CircuitOpenError extends BoundaryError {
   constructor(provider: string, retryAfter?: Date) {
     super(
@@ -29,7 +23,7 @@ export class CircuitOpenError extends BoundaryError {
     );
     this.name = "CircuitOpenError";
 
-    // Maintain proper stack trace for CircuitOpenError specifically
+    
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, CircuitOpenError);
     }
@@ -63,12 +57,12 @@ export class ProviderCircuitBreaker {
   }
 
   async execute<T>(fn: () => Promise<T>): Promise<T> {
-    // Check if circuit is OPEN and we should reject immediately
+    
     if (this.state === CircuitState.OPEN) {
       if (this.nextAttempt && Date.now() < this.nextAttempt.getTime()) {
         throw new CircuitOpenError(this.provider, this.nextAttempt);
       }
-      // Timeout expired, transition to HALF_OPEN
+      
       this.state = CircuitState.HALF_OPEN;
       this.successes = 0;
     }
@@ -89,13 +83,13 @@ export class ProviderCircuitBreaker {
     if (this.state === CircuitState.HALF_OPEN) {
       this.successes++;
       if (this.successes >= this.config.successThreshold) {
-        // Transition to CLOSED
+        
         this.state = CircuitState.CLOSED;
         this.failures = 0;
         this.nextAttempt = null;
       }
     } else if (this.state === CircuitState.CLOSED) {
-      // Reset failure count on success
+      
       this.failures = 0;
     }
   }
@@ -104,14 +98,14 @@ export class ProviderCircuitBreaker {
     this.addResult({ success: false, timestamp: Date.now() });
 
     if (this.state === CircuitState.HALF_OPEN) {
-      // Any failure in HALF_OPEN immediately opens the circuit
+      
       this.state = CircuitState.OPEN;
       this.failures = 0;
       this.nextAttempt = new Date(Date.now() + this.config.timeout);
     } else if (this.state === CircuitState.CLOSED) {
       this.failures++;
 
-      // Check if we should open the circuit
+      
       if (this.shouldOpenCircuit()) {
         this.state = CircuitState.OPEN;
         this.nextAttempt = new Date(Date.now() + this.config.timeout);
@@ -120,17 +114,17 @@ export class ProviderCircuitBreaker {
   }
 
   private shouldOpenCircuit(): boolean {
-    // Need minimum volume before we can open
+    
     if (this.recentResults.length < this.config.volumeThreshold) {
       return false;
     }
 
-    // Check failure threshold
+    
     if (this.failures >= this.config.failureThreshold) {
       return true;
     }
 
-    // Check error rate in rolling window
+    
     const windowStart = Date.now() - this.config.rollingWindowMs;
     const recentInWindow = this.recentResults.filter(
       (r) => r.timestamp >= windowStart
@@ -149,7 +143,7 @@ export class ProviderCircuitBreaker {
   private addResult(result: CircuitResult): void {
     this.recentResults.push(result);
 
-    // Clean up old results outside the rolling window
+    
     const windowStart = Date.now() - this.config.rollingWindowMs;
     this.recentResults = this.recentResults.filter(
       (r) => r.timestamp >= windowStart

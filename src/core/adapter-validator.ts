@@ -1,18 +1,4 @@
-/**
- * Adapter validation tooling
- * 
- * This module validates that adapters correctly implement the ProviderAdapter contract
- * and do not leak provider-specific semantics into Boundary's core.
- * 
- * Validation checks:
- * - All required methods are implemented
- * - Methods return correct types
- * - Errors are properly normalized (no raw provider errors)
- * - Responses are properly normalized (no provider-specific fields)
- * - No provider-specific types leak into public API
- * 
- * This tooling makes incorrect adapters impossible to ignore.
- */
+
 
 import {
   BoundaryError,
@@ -23,26 +9,16 @@ import {
   type PaginationStrategy,
 } from "./types.js";
 
-// Note: validator must not cause side-effects. We only invoke pure/cheap methods.
 
-/**
- * Validation result for adapter checks.
- */
+
+
 export interface ValidationResult {
   valid: boolean;
   errors: string[];
   warnings: string[];
 }
 
-/**
- * Validates that an adapter correctly implements the ProviderAdapter contract.
- * 
- * This performs runtime checks that complement TypeScript's compile-time checks.
- * 
- * @param adapter Adapter instance to validate
- * @param providerName Provider name for error messages
- * @returns Validation result with errors and warnings
- */
+
 export async function validateAdapter(
   adapter: ProviderAdapter,
   providerName: string
@@ -50,7 +26,7 @@ export async function validateAdapter(
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  // Check all required methods exist
+  
   const requiredMethods: Array<keyof ProviderAdapter> = [
     "buildRequest",
     "parseResponse",
@@ -69,7 +45,7 @@ export async function validateAdapter(
     }
   }
 
-  // Validate buildRequest
+  
   if (typeof adapter.buildRequest === "function") {
     try {
       const input: AdapterInput = {
@@ -97,7 +73,7 @@ export async function validateAdapter(
     }
   }
 
-  // Validate parseResponse
+  
   if (typeof adapter.parseResponse === "function") {
     try {
       const raw: RawResponse = {
@@ -146,7 +122,7 @@ export async function validateAdapter(
     }
   }
 
-  // Validate parseError - CRITICAL: Must return BoundaryError
+  
   if (typeof adapter.parseError === "function") {
     const testErrors = [
       { status: 401, headers: new Headers(), body: { message: "Unauthorized" } },
@@ -160,7 +136,7 @@ export async function validateAdapter(
       try {
         const error: unknown = adapter.parseError(testError);
 
-        // Must be BoundaryError instance (ensures proper error hierarchy)
+        
         if (!(error instanceof BoundaryError)) {
           if (error instanceof Error) {
             errors.push(
@@ -172,34 +148,34 @@ export async function validateAdapter(
           continue;
         }
 
-        // Validate category (should always be valid due to BoundaryError class, but double-check)
+        
         const validCategories = ["auth", "rate_limit", "network", "provider", "validation"];
         if (!validCategories.includes(error.category)) {
           errors.push(
-            `parseError returned invalid category: ${error.category}. Must be one of: ${validCategories.join(", ")}`
+            `parseError returned invalid category: ${error.category}. Must be one of: ${validCategories.join()}`
           );
         }
 
-        // Validate retryable (should always be boolean due to class, but double-check)
+        
         if (typeof error.retryable !== "boolean") {
           errors.push("parseError returned BoundaryError with non-boolean 'retryable' property");
         }
 
-        // Validate provider matches
+        
         if (error.provider !== providerName) {
           errors.push(
             `parseError returned provider '${error.provider}', expected '${providerName}'`
           );
         }
 
-        // Must NOT leak raw provider error structure
+        
         if ("status" in error && typeof (error as any).status === "number") {
           errors.push(
             "parseError MUST NOT leak provider-specific fields (like 'status'). Use metadata instead."
           );
         }
 
-        // Must NOT leak provider-specific error types
+        
         const providerSpecificFields = ["documentation_url", "github_message", "stripe_error"];
         for (const field of providerSpecificFields) {
           if (field in error && !(field in Error.prototype)) {
@@ -216,15 +192,15 @@ export async function validateAdapter(
     }
   }
 
-  // Validate authStrategy
-  // IMPORTANT: This validation uses a clearly fake token (BOUNDARY_TEST_TOKEN_*)
-  // Adapters MUST NOT make real API calls during validation. They should:
-  // 1. Return a valid AuthToken structure synchronously for test tokens
-  // 2. Throw BoundaryError with category "auth" if token format is invalid
-  // 3. NOT perform actual authentication/validation against provider APIs
+  
+  
+  
+  
+  
+  
   if (typeof adapter.authStrategy === "function") {
     try {
-      // Use clearly fake test token that adapters should recognize
+      
       const config: AuthConfig = { token: "BOUNDARY_TEST_TOKEN_DO_NOT_VALIDATE" };
       const tokenPromise = adapter.authStrategy(config);
 
@@ -239,7 +215,7 @@ export async function validateAdapter(
             errors.push("authStrategy must return token as string");
           }
         } catch (error) {
-          // Errors are OK if they're BoundaryErrors
+          
           if (error instanceof Error && "category" in error) {
             const boundaryError = error as BoundaryError;
             if (boundaryError.category !== "auth") {
@@ -255,12 +231,12 @@ export async function validateAdapter(
         }
       }
     } catch (error) {
-      // Synchronous errors are unexpected
+      
       errors.push(`authStrategy threw synchronous error: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
-  // Validate rateLimitPolicy
+  
   if (typeof adapter.rateLimitPolicy === "function") {
     try {
       const headers = new Headers({
@@ -288,7 +264,7 @@ export async function validateAdapter(
     }
   }
 
-  // Validate paginationStrategy
+  
   if (typeof adapter.paginationStrategy === "function") {
     try {
       const strategy = adapter.paginationStrategy();
@@ -308,7 +284,7 @@ export async function validateAdapter(
     }
   }
 
-  // Validate getIdempotencyConfig
+  
   if (typeof adapter.getIdempotencyConfig === "function") {
     try {
       const config = adapter.getIdempotencyConfig();
@@ -335,24 +311,14 @@ export async function validateAdapter(
   };
 }
 
-/**
- * Validates adapter and throws if invalid.
- * Use this in adapter constructors or initialization to fail fast.
- *
- * IMPORTANT: This function is MANDATORY for adapter registration.
- * Warnings are treated as errors - adapters must be fully compliant.
- *
- * @param adapter Adapter instance to validate
- * @param providerName Provider name for error messages
- * @throws Error if adapter is invalid or has warnings
- */
+
 export async function assertValidAdapter(
   adapter: ProviderAdapter,
   providerName: string
 ): Promise<void> {
   const result = await validateAdapter(adapter, providerName);
 
-  // Fail on errors OR warnings - no partial compliance allowed
+  
   if (!result.valid || result.warnings.length > 0) {
     const errorMessage = [
       `Adapter validation failed for '${providerName}':`,
@@ -364,10 +330,7 @@ export async function assertValidAdapter(
   }
 }
 
-/**
- * Type guard to check if an object implements ProviderAdapter.
- * Useful for runtime type checking.
- */
+
 export function isProviderAdapter(obj: unknown): obj is ProviderAdapter {
   if (!obj || typeof obj !== "object") {
     return false;

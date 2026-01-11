@@ -14,7 +14,7 @@ class MockObservability implements ObservabilityAdapter {
   recordMetric(metric: Metric) { this.metrics.push(metric); }
 }
 
-// Minimal test adapter to avoid network calls
+
 class TestAdapter {
   provider = "test";
   async authStrategy(config: any) {
@@ -73,7 +73,7 @@ describe("Observability sanitizer", () => {
   });
 
   it("redacts secrets from request logs and metrics", async () => {
-    // stub global fetch to avoid network
+    
     (globalThis as any).fetch = async () => {
       const headers = new Headers({ "content-type": "application/json" });
       return {
@@ -97,14 +97,14 @@ describe("Observability sanitizer", () => {
 
     await (boundary as any).test.get("/endpoint", { headers: { Authorization: "Bearer secret", "X-Api-Key": "abc" }, body: { password: "p" } });
 
-    // Request should be sanitized
+    
     expect(mock.requests.length).toBeGreaterThan(0);
     const req = mock.requests[0];
     expect(req.options.headers.Authorization).toBe("[REDACTED]");
     expect(req.options.headers["X-Api-Key"]).toBe("[REDACTED]");
     expect(req.options.body).toBe("[REDACTED]");
 
-    // Metrics should have sanitized tags
+    
     expect(mock.metrics.length).toBeGreaterThan(0);
     const m = mock.metrics.find(mm => mm.name === "boundary.request.count");
     expect(m).toBeDefined();
@@ -112,7 +112,7 @@ describe("Observability sanitizer", () => {
   });
 
   it("redacts secrets from error metadata when adapters return sensitive info", async () => {
-    // stub fetch to return non-ok to trigger parseError
+    
     (globalThis as any).fetch = async () => {
       const headers = new Headers({});
       return {
@@ -136,13 +136,13 @@ describe("Observability sanitizer", () => {
 
     await expect((boundary as any).test.get("/endpoint")).rejects.toBeDefined();
 
-    // Error should be logged with sanitized metadata
+    
     expect(mock.errors.length).toBeGreaterThan(0);
     const err = mock.errors[0];
     expect(err.error.metadata).toBeDefined();
-    // secret key should be redacted
+    
     expect(err.error.metadata.secret).toBe("[REDACTED]");
-    // nested apiKey should be redacted
+    
     expect(err.error.metadata.inner.apiKey).toBe("[REDACTED]");
   });
 });

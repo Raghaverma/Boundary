@@ -1,16 +1,4 @@
-/**
- * Contract tests for GitHub adapter
- * 
- * These tests validate Boundary invariants, NOT GitHub behavior.
- * They ensure the adapter correctly normalizes GitHub responses/errors
- * into Boundary's canonical forms.
- * 
- * Key principles:
- * - Snapshot normalized outputs to catch shape changes
- * - Test error normalization, not GitHub error semantics
- * - Simulate vendor changes via fixtures
- * - Fail loudly if normalization breaks
- */
+
 
 import { describe, it, expect } from "vitest";
 import { GitHubAdapter } from "./adapter.js";
@@ -81,7 +69,7 @@ describe("GitHub Adapter - Contract Tests", () => {
 
       const normalized = adapter.parseResponse(raw);
 
-      // Validate Boundary response structure
+      
       expect(normalized).toHaveProperty("data");
       expect(normalized).toHaveProperty("meta");
       expect(normalized.meta).toHaveProperty("provider", "github");
@@ -91,7 +79,7 @@ describe("GitHub Adapter - Contract Tests", () => {
       expect(normalized.meta.rateLimit).toHaveProperty("reset");
       expect(normalized.meta.rateLimit.reset).toBeInstanceOf(Date);
 
-      // Snapshot the normalized structure
+      
       expect(normalized).toMatchSnapshot();
     });
 
@@ -134,7 +122,7 @@ describe("GitHub Adapter - Contract Tests", () => {
       expect(error.provider).toBe("github");
       expect(error.message).toBeTruthy();
 
-      // Snapshot error structure
+      
       expect({
         category: error.category,
         retryable: error.retryable,
@@ -264,23 +252,23 @@ describe("GitHub Adapter - Contract Tests", () => {
         body: {
           message: "Bad credentials",
           documentation_url: "https://docs.github.com/rest",
-          // GitHub-specific fields that should NOT be in BoundaryError
+          
           github_specific_field: "should not appear",
         },
       };
 
       const error = adapter.parseError(raw);
 
-      // Error should be BoundaryError, not raw GitHub error
+      
       expect(error).toBeInstanceOf(Error);
       expect(error.category).toBeDefined();
       expect(error.provider).toBe("github");
       
-      // GitHub-specific fields should only be in metadata, not top-level
+      
       expect((error as any).documentation_url).toBeUndefined();
       expect((error as any).github_specific_field).toBeUndefined();
       
-      // Metadata may contain provider details for debugging
+      
       if (error.metadata) {
         expect(error.metadata.githubMessage).toBeDefined();
       }
@@ -303,7 +291,7 @@ describe("GitHub Adapter - Contract Tests", () => {
         reset: expect.any(Date),
       });
 
-      // Validate reset is in the future
+      
       expect(rateLimit.reset.getTime()).toBeGreaterThan(Date.now());
     });
 
@@ -312,7 +300,7 @@ describe("GitHub Adapter - Contract Tests", () => {
 
       const rateLimit = adapter.rateLimitPolicy(headers);
 
-      // Should return defaults, not throw
+      
       expect(rateLimit).toMatchObject({
         limit: expect.any(Number),
         remaining: expect.any(Number),
@@ -370,7 +358,7 @@ describe("GitHub Adapter - Contract Tests", () => {
 
       const error = adapter.parseError(raw);
 
-      // Must be BoundaryError, not raw GitHub error
+      
       expect(error).toBeInstanceOf(Error);
       expect((error as any).status).toBeUndefined();
       expect((error as any).body).toBeUndefined();
@@ -379,7 +367,7 @@ describe("GitHub Adapter - Contract Tests", () => {
     it("should ALWAYS return canonical error categories", () => {
       const testCases = [
         { status: 401, expectedCategory: "auth" },
-        { status: 403, expectedCategory: "auth" }, // Without rate limit
+        { status: 403, expectedCategory: "auth" }, 
         { status: 404, expectedCategory: "validation" },
         { status: 422, expectedCategory: "validation" },
         { status: 429, expectedCategory: "rate_limit" },
@@ -411,7 +399,7 @@ describe("GitHub Adapter - Contract Tests", () => {
 
       const normalized = adapter.parseResponse(raw);
 
-      // Must have Boundary structure
+      
       expect(normalized).toHaveProperty("data");
       expect(normalized).toHaveProperty("meta");
       expect(normalized.meta).toHaveProperty("provider", "github");
@@ -424,12 +412,12 @@ describe("GitHub Adapter - Contract Tests", () => {
 
   describe("Vendor Change Simulation", () => {
     it("should handle GitHub API changes gracefully", () => {
-      // Simulate GitHub changing error format
+      
       const raw = {
         status: 401,
         headers: new Headers(),
         body: {
-          // New format GitHub might use
+          
           error: {
             code: "AUTH_FAILED",
             message: "Authentication failed",
@@ -437,19 +425,19 @@ describe("GitHub Adapter - Contract Tests", () => {
         },
       };
 
-      // Adapter should still normalize to BoundaryError
+      
       const error = adapter.parseError(raw);
 
       expect(error.category).toBe("auth");
       expect(error.retryable).toBe(false);
-      // Should not crash on format changes
+      
     });
 
     it("should handle missing rate limit headers", () => {
-      // Simulate GitHub removing rate limit headers
+      
       const headers = new Headers();
 
-      // Should not throw, should return defaults
+      
       const rateLimit = adapter.rateLimitPolicy(headers);
 
       expect(rateLimit).toMatchObject({

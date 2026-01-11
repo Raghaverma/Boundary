@@ -1,6 +1,4 @@
-/**
- * Pagination normalization utilities
- */
+
 
 import type { PaginationStrategy, RawResponse, RequestOptions } from "../core/types.js";
 
@@ -27,7 +25,7 @@ export class CursorPaginationStrategy implements PaginationStrategy {
       return cursor;
     }
 
-    // Try to extract from body if it's an object
+    
     if (
       typeof response.body === "object" &&
       response.body !== null &&
@@ -49,7 +47,7 @@ export class CursorPaginationStrategy implements PaginationStrategy {
       }
     }
 
-    // Try to extract from body
+    
     if (
       typeof response.body === "object" &&
       response.body !== null &&
@@ -109,7 +107,7 @@ export class OffsetPaginationStrategy implements PaginationStrategy {
   }
 
   extractCursor(response: RawResponse): string | null {
-    // For offset-based, cursor is the next offset
+    
     const currentOffset =
       typeof response.body === "object" &&
       response.body !== null &&
@@ -126,7 +124,7 @@ export class OffsetPaginationStrategy implements PaginationStrategy {
 
     const total = this.extractTotal(response);
     if (total !== null && currentOffset + limit >= total) {
-      return null; // No more pages
+      return null; 
     }
 
     return String(currentOffset + limit);

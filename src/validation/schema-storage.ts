@@ -1,6 +1,4 @@
-/**
- * Schema storage interface and implementations
- */
+
 
 import type { Schema, SchemaMetadata, SchemaStorage } from "../core/types.js";
 import { promises as fs } from "fs";
@@ -8,10 +6,7 @@ import { join } from "path";
 
 export type { SchemaStorage } from "../core/types.js";
 
-/**
- * File system schema storage
- * Stores schemas in .boundary/schemas/{provider}/{endpoint-hash}.json
- */
+
 export class FileSystemSchemaStorage implements SchemaStorage {
   private basePath: string;
 
@@ -29,7 +24,7 @@ export class FileSystemSchemaStorage implements SchemaStorage {
     const dir = join(this.basePath, provider);
     const filePath = join(dir, `${endpointHash}.json`);
 
-    // Ensure directory exists
+    
     await fs.mkdir(dir, { recursive: true });
 
     const metadata: SchemaMetadata & { schema: Schema } = {
@@ -104,18 +99,18 @@ export class FileSystemSchemaStorage implements SchemaStorage {
   }
 
   private hashEndpoint(endpoint: string): string {
-    // Simple hash function (in production, use crypto.createHash)
+    
     let hash = 0;
     for (let i = 0; i < endpoint.length; i++) {
       const char = endpoint.charCodeAt(i);
       hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32-bit integer
+      hash = hash & hash; 
     }
     return Math.abs(hash).toString(36);
   }
 
   private calculateChecksum(schema: Schema): string {
-    // Simple checksum (in production, use crypto.createHash('sha256'))
+    
     const str = JSON.stringify(schema);
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
@@ -127,9 +122,7 @@ export class FileSystemSchemaStorage implements SchemaStorage {
   }
 }
 
-/**
- * In-memory schema storage (for testing, ephemeral mode)
- */
+
 export class InMemorySchemaStorage implements SchemaStorage {
   private schemas: Map<string, { schema: Schema; metadata: SchemaMetadata }> =
     new Map();

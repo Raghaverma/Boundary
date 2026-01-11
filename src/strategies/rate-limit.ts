@@ -1,6 +1,4 @@
-/**
- * Token bucket rate limiter with adaptive backoff
- */
+
 
 import type { RateLimitConfig, RateLimitInfo } from "../core/types.js";
 
@@ -33,7 +31,7 @@ export class RateLimiter {
       return;
     }
 
-    // No tokens available, need to wait
+    
     if (this.config.queueSize && this.queue.length >= this.config.queueSize) {
       throw new Error("Rate limit queue is full");
     }
@@ -46,7 +44,7 @@ export class RateLimiter {
 
   private refill(): void {
     const now = Date.now();
-    // Clamp elapsed to >= 0 to handle future lastRefill (set by handle429)
+    
     const elapsed = Math.max(0, (now - this.lastRefill) / 1000);
     const tokensToAdd = elapsed * this.config.tokensPerSecond;
 
@@ -76,7 +74,7 @@ export class RateLimiter {
           item.resolve();
         }
       } else {
-        // Wait for next token
+        
         const waitTime = (1 / this.config.tokensPerSecond) * 1000;
         await new Promise((resolve) => setTimeout(resolve, waitTime));
       }
@@ -90,22 +88,22 @@ export class RateLimiter {
       return;
     }
 
-    // Update rate limit based on provider headers
+    
     const remaining = rateLimitInfo.remaining;
     const limit = rateLimitInfo.limit;
     const reset = rateLimitInfo.reset.getTime();
 
-    // If we're close to the limit, slow down
+    
     const utilization = (limit - remaining) / limit;
     if (utilization > 0.8) {
-      // Reduce token rate by 50% when > 80% utilized
+      
       this.config.tokensPerSecond = Math.max(
         1,
         this.config.tokensPerSecond * 0.5
       );
     }
 
-    // Calculate tokens per second from reset time
+    
     const now = Date.now();
     const timeUntilReset = reset - now;
     if (timeUntilReset > 0 && remaining < limit) {
@@ -119,7 +117,7 @@ export class RateLimiter {
 
   handle429(retryAfter: number): void {
     if (this.config.adaptiveBackoff) {
-      // Pause token refill for retryAfter seconds
+      
       this.lastRefill = Date.now() + retryAfter * 1000;
     }
   }

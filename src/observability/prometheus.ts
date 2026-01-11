@@ -1,26 +1,4 @@
-/**
- * Prometheus observability adapter
- *
- * This adapter provides Prometheus-compatible metrics for Boundary.
- * It exposes metrics in the Prometheus text format that can be scraped.
- *
- * Usage:
- * ```typescript
- * const prometheus = new PrometheusObservability();
- *
- * const boundary = await Boundary.create({
- *   observability: prometheus,
- *   localUnsafe: true, // Required for local development
- *   // ... other config
- * });
- *
- * // In your HTTP server
- * app.get("/metrics", (req, res) => {
- *   res.set("Content-Type", "text/plain");
- *   res.send(prometheus.getMetrics());
- * });
- * ```
- */
+
 
 import type {
   ObservabilityAdapter,
@@ -31,11 +9,11 @@ import type {
 } from "../core/types.js";
 
 export interface PrometheusConfig {
-  /** Prefix for metric names (default: "boundary") */
+  
   prefix?: string;
-  /** Include help text in output (default: true) */
+  
   includeHelp?: boolean;
-  /** Default labels to add to all metrics */
+  
   defaultLabels?: Record<string, string>;
 }
 
@@ -69,7 +47,7 @@ export class PrometheusObservability implements ObservabilityAdapter {
   private counters: Map<string, MetricDefinition> = new Map();
   private histograms: Map<string, HistogramMetric> = new Map();
 
-  // Default histogram buckets for request duration (ms)
+  
   private static readonly DEFAULT_DURATION_BUCKETS = [
     5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000,
   ];
@@ -81,12 +59,12 @@ export class PrometheusObservability implements ObservabilityAdapter {
       defaultLabels: config.defaultLabels ?? {},
     };
 
-    // Initialize standard metrics
+    
     this.initializeMetrics();
   }
 
   private initializeMetrics(): void {
-    // Request counter
+    
     this.counters.set("requests_total", {
       name: `${this.config.prefix}_requests_total`,
       help: "Total number of Boundary API requests",
@@ -94,7 +72,7 @@ export class PrometheusObservability implements ObservabilityAdapter {
       values: new Map(),
     });
 
-    // Error counter
+    
     this.counters.set("errors_total", {
       name: `${this.config.prefix}_errors_total`,
       help: "Total number of Boundary API errors",
@@ -102,7 +80,7 @@ export class PrometheusObservability implements ObservabilityAdapter {
       values: new Map(),
     });
 
-    // Request duration histogram
+    
     this.histograms.set("request_duration_ms", {
       name: `${this.config.prefix}_request_duration_ms`,
       help: "Request duration in milliseconds",
@@ -113,7 +91,7 @@ export class PrometheusObservability implements ObservabilityAdapter {
   }
 
   logRequest(context: RequestContext): void {
-    // Increment request counter
+    
     this.incrementCounter("requests_total", {
       provider: context.provider,
       method: context.method,
@@ -122,7 +100,7 @@ export class PrometheusObservability implements ObservabilityAdapter {
   }
 
   logResponse(context: ResponseContext): void {
-    // Record duration
+    
     this.recordHistogram("request_duration_ms", context.duration, {
       provider: context.provider,
       method: context.method,
@@ -131,14 +109,14 @@ export class PrometheusObservability implements ObservabilityAdapter {
   }
 
   logError(context: ErrorContext): void {
-    // Increment error counter
+    
     this.incrementCounter("errors_total", {
       provider: context.provider,
       category: context.error.category,
       retryable: String(context.error.retryable),
     });
 
-    // Also record duration for errors
+    
     this.recordHistogram("request_duration_ms", context.duration, {
       provider: context.provider,
       method: context.method,
@@ -148,12 +126,12 @@ export class PrometheusObservability implements ObservabilityAdapter {
   }
 
   logWarning(_message: string, _metadata?: Record<string, unknown>): void {
-    // Prometheus doesn't have a native warning concept
-    // Warnings could be emitted as logs or counted if needed
+    
+    
   }
 
   recordMetric(metric: Metric): void {
-    // Generic metric recording - treat as counter by default
+    
     const metricKey = metric.name.replace(/\./g, "_");
 
     if (!this.counters.has(metricKey)) {
@@ -168,14 +146,11 @@ export class PrometheusObservability implements ObservabilityAdapter {
     this.incrementCounter(metricKey, metric.tags, metric.value);
   }
 
-  /**
-   * Returns metrics in Prometheus text format.
-   * Call this from your /metrics endpoint.
-   */
+  
   getMetrics(): string {
     const lines: string[] = [];
 
-    // Output counters
+    
     for (const metric of this.counters.values()) {
       if (this.config.includeHelp) {
         lines.push(`# HELP ${metric.name} ${metric.help}`);
@@ -188,7 +163,7 @@ export class PrometheusObservability implements ObservabilityAdapter {
       }
     }
 
-    // Output histograms
+    
     for (const histogram of this.histograms.values()) {
       if (this.config.includeHelp) {
         lines.push(`# HELP ${histogram.name} ${histogram.help}`);
@@ -198,7 +173,7 @@ export class PrometheusObservability implements ObservabilityAdapter {
       for (const [labelKey, data] of histogram.data) {
         const baseLabels = this.parseLabelKey(labelKey);
 
-        // Output buckets
+        
         for (const bucket of data.buckets) {
           const bucketLabels = { ...baseLabels, le: String(bucket.le) };
           lines.push(
@@ -206,13 +181,13 @@ export class PrometheusObservability implements ObservabilityAdapter {
           );
         }
 
-        // Output +Inf bucket (total count)
+        
         const infLabels = { ...baseLabels, le: "+Inf" };
         lines.push(
           `${histogram.name}_bucket${this.formatLabels(infLabels)} ${data.count}`
         );
 
-        // Output sum and count
+        
         lines.push(
           `${histogram.name}_sum${this.formatLabels(baseLabels)} ${data.sum}`
         );
@@ -225,9 +200,7 @@ export class PrometheusObservability implements ObservabilityAdapter {
     return lines.join("\n") + "\n";
   }
 
-  /**
-   * Resets all metrics. Useful for testing.
-   */
+  
   reset(): void {
     for (const metric of this.counters.values()) {
       metric.values.clear();
@@ -269,7 +242,7 @@ export class PrometheusObservability implements ObservabilityAdapter {
 
     let data = histogram.data.get(labelKey);
     if (!data) {
-      // Initialize buckets
+      
       data = {
         buckets: histogram.buckets.map((le) => ({ le, count: 0 })),
         sum: 0,
@@ -278,14 +251,14 @@ export class PrometheusObservability implements ObservabilityAdapter {
       histogram.data.set(labelKey, data);
     }
 
-    // Update buckets
+    
     for (const bucket of data.buckets) {
       if (value <= bucket.le) {
         bucket.count++;
       }
     }
 
-    // Update sum and count
+    
     data.sum += value;
     data.count++;
   }

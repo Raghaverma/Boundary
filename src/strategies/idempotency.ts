@@ -1,6 +1,4 @@
-/**
- * Idempotency level resolver
- */
+
 
 import {
   IdempotencyLevel,
@@ -30,29 +28,29 @@ export class IdempotencyResolver {
     endpoint: string,
     _options: RequestOptions
   ): IdempotencyLevel {
-    // Check for operation-specific override
+    
     const operationKey = `${method} ${endpoint}`;
     const override = this.findOverride(operationKey);
     if (override !== null) {
       return override;
     }
 
-    // Check if method is in default safe operations
+    
     if (this.config.defaultSafeOperations.has(method.toUpperCase())) {
       return IdempotencyLevel.SAFE;
     }
 
-    // Default to configured default level
+    
     return this.defaultLevel;
   }
 
   private findOverride(operationKey: string): IdempotencyLevel | null {
-    // Exact match
+    
     if (this.config.operationOverrides.has(operationKey)) {
       return this.config.operationOverrides.get(operationKey)!;
     }
 
-    // Pattern matching (e.g., "POST /repos/:owner/:repo/pulls")
+    
     for (const [pattern, level] of this.config.operationOverrides.entries()) {
       if (this.matchesPattern(pattern, operationKey)) {
         return level;
@@ -63,7 +61,7 @@ export class IdempotencyResolver {
   }
 
   private matchesPattern(pattern: string, operationKey: string): boolean {
-    // Simple pattern matching: replace :param with regex
+    
     const regexPattern = pattern.replace(
       /:[\w-]+/g,
       "[^/]+"
@@ -93,7 +91,7 @@ export class IdempotencyResolver {
       return false;
     }
 
-    // SAFE and IDEMPOTENT can retry
+    
     return true;
   }
 }

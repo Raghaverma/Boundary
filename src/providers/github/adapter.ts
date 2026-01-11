@@ -1,16 +1,4 @@
-/**
- * GitHub provider adapter - Reference implementation
- * 
- * This adapter serves as the authoritative specification for how adapters
- * should normalize provider-specific behavior into Boundary's canonical forms.
- * 
- * Key normalizations:
- * - Disambiguates GitHub's overloaded 404 (not found vs no access)
- * - Normalizes rate limits from X-RateLimit-* headers
- * - Implements cursor/Link-header pagination
- * - Distinguishes auth expiry from permission errors
- * - Maps all failures to canonical BoundaryError categories
- */
+
 
 import type {
   ProviderAdapter,
@@ -29,10 +17,7 @@ import { GitHubPaginationStrategy } from "./pagination.js";
 import { ResponseNormalizer } from "../../core/normalizer.js";
 import { parseRetryAfter, parseRateLimitHeaders } from "../../core/header-parser.js";
 
-/**
- * GitHub API error response structure.
- * This is provider-specific and MUST NOT leak outside this adapter.
- */
+
 interface GitHubErrorResponse {
   message?: string;
   documentation_url?: string;
@@ -44,14 +29,7 @@ interface GitHubErrorResponse {
   }>;
 }
 
-/**
- * Reference GitHub adapter implementation.
- * 
- * This adapter demonstrates:
- * - Explicit error disambiguation (404 handling)
- * - Complete normalization of provider quirks
- * - Zero leakage of GitHub-specific semantics
- */
+
 export class GitHubAdapter implements ProviderAdapter {
   private baseUrl: string;
 
@@ -59,44 +37,39 @@ export class GitHubAdapter implements ProviderAdapter {
     this.baseUrl = baseUrl;
   }
 
-  /**
-   * Builds a GitHub API request from normalized input.
-   * 
-   * This method constructs the request but does NOT execute it.
-   * HTTP execution is handled by the pipeline.
-   */
+  
   buildRequest(input: AdapterInput): BuiltRequest {
     const { endpoint, options, authToken, baseUrl } = input;
     const effectiveBaseUrl = baseUrl ?? this.baseUrl;
     
-    // Construct URL
+    
     const url = new URL(endpoint, effectiveBaseUrl);
     
-    // Add query parameters
+    
     if (options.query) {
       for (const [key, value] of Object.entries(options.query)) {
         url.searchParams.set(key, String(value));
       }
     }
 
-    // Build headers - all GitHub-specific headers are here
+    
     const headers: Record<string, string> = {
       "Accept": "application/vnd.github.v3+json",
       "User-Agent": "Boundary-SDK/1.0.0",
       ...options.headers,
     };
 
-    // Add authentication - GitHub uses Bearer tokens
+    
     if (authToken.token) {
       headers["Authorization"] = `Bearer ${authToken.token}`;
     }
 
-    // Add idempotency key if provided
+    
     if (options.idempotencyKey) {
       headers["X-Idempotency-Key"] = options.idempotencyKey;
     }
 
-    // Serialize body if present
+    
     let body: string | undefined;
     const method = options.method ?? "GET";
     if (options.body && method !== "GET" && method !== "HEAD") {
@@ -115,26 +88,19 @@ export class GitHubAdapter implements ProviderAdapter {
     return built;
   }
 
-  /**
-   * Parses a GitHub API response into normalized form.
-   * 
-   * Handles:
-   * - Rate limit extraction from headers
-   * - Pagination extraction
-   * - Response body normalization
-   */
+  
   parseResponse(raw: RawResponse): NormalizedResponse {
-    // Extract rate limit information
+    
     const rateLimitInfo = this.rateLimitPolicy(raw.headers);
     
-    // Extract pagination information
+    
     const paginationStrategy = this.paginationStrategy();
     const paginationInfo = ResponseNormalizer.extractPaginationInfo(
       raw,
       paginationStrategy
     );
 
-    // Normalize response
+    
     return ResponseNormalizer.normalize(
       raw,
       "github",
@@ -145,20 +111,9 @@ export class GitHubAdapter implements ProviderAdapter {
     );
   }
 
-  /**
-   * Parses GitHub errors into canonical BoundaryError.
-   * 
-   * CRITICAL: This is the ONLY place GitHub error semantics are handled.
-   * 
-   * GitHub-specific error handling:
-   * - 404 can mean "not found" OR "no access" - must disambiguate
-   * - 401 = authentication required (token missing/invalid)
-   * - 403 = permission denied OR rate limit (check X-RateLimit-Remaining)
-   * - 422 = validation error (with detailed field errors)
-   * - 5xx = provider error
-   */
+  
   parseError(raw: unknown): BoundaryError {
-    // Network errors (fetch failures, timeouts, etc.)
+    
     if (raw instanceof Error) {
       const errorMessage = raw.message.toLowerCase();
       if (
@@ -178,7 +133,7 @@ export class GitHubAdapter implements ProviderAdapter {
       }
     }
 
-    // HTTP error responses
+    
     if (
       typeof raw === "object" &&
       raw !== null &&
@@ -195,7 +150,7 @@ export class GitHubAdapter implements ProviderAdapter {
       return this.parseHttpError(httpError);
     }
 
-    // Unknown error format - treat as provider error
+    
     return this.createBoundaryError(
       "provider",
       false,
@@ -204,9 +159,7 @@ export class GitHubAdapter implements ProviderAdapter {
     );
   }
 
-  /**
-   * Parses HTTP error responses with GitHub-specific logic.
-   */
+  
   private parseHttpError(error: {
     status: number;
     headers?: Headers | Record<string, string>;
@@ -217,7 +170,7 @@ export class GitHubAdapter implements ProviderAdapter {
     const body = error.body as GitHubErrorResponse | undefined;
     const headers = error.headers;
 
-    // 401 Unauthorized - Authentication required
+    
     if (status === 401) {
       return this.createBoundaryError(
         "auth",
@@ -230,10 +183,10 @@ export class GitHubAdapter implements ProviderAdapter {
       );
     }
 
-    // 403 Forbidden - Could be permission OR rate limit
+    
     if (status === 403) {
-      // Check if this is actually a rate limit (GitHub sometimes returns 403 for rate limits)
-      // Only treat as rate limit if X-RateLimit-Remaining is explicitly "0"
+      
+      
       const rateLimitRemaining = this.getHeaderValue(headers, "X-RateLimit-Remaining");
       if (rateLimitRemaining === "0") {
         const retryAfter = this.extractRetryAfter(headers);
@@ -249,7 +202,7 @@ export class GitHubAdapter implements ProviderAdapter {
         );
       }
 
-      // Otherwise, it's a permission error
+      
       return this.createBoundaryError(
         "auth",
         false,
@@ -261,20 +214,20 @@ export class GitHubAdapter implements ProviderAdapter {
       );
     }
 
-    // 404 Not Found - CRITICAL: GitHub uses 404 for both "not found" and "no access"
-    // We must disambiguate based on context, but in general we treat it as validation
-    // (resource doesn't exist or you don't have access)
+    
+    
+    
     if (status === 404) {
-      // If there's a message suggesting access issues, treat as auth
+      
       const message = body?.message?.toLowerCase() ?? "";
       if (
         message.includes("not found") ||
         message.includes("does not exist") ||
         message.includes("not accessible")
       ) {
-        // Could be either - default to validation (not found)
-        // In practice, 404 for private repos without access might be auth
-        // but GitHub doesn't distinguish, so we default to validation
+        
+        
+        
         return this.createBoundaryError(
           "validation",
           false,
@@ -296,10 +249,10 @@ export class GitHubAdapter implements ProviderAdapter {
       );
     }
 
-    // 422 Unprocessable Entity - Validation error with details
+    
     if (status === 422) {
       const fieldErrors = body?.errors
-        ?.map((e) => `${e.field ?? "unknown"}: ${e.message ?? e.code ?? "error"}`)
+        ?.map((e) => `${e.field ?? }: ${e.message ?? e.code ?? }`)
         .join("; ");
       
       return this.createBoundaryError(
@@ -315,7 +268,7 @@ export class GitHubAdapter implements ProviderAdapter {
       );
     }
 
-    // 429 Too Many Requests - Rate limit
+    
     if (status === 429) {
       const retryAfter = this.extractRetryAfter(headers);
       return this.createBoundaryError(
@@ -330,7 +283,7 @@ export class GitHubAdapter implements ProviderAdapter {
       );
     }
 
-    // 5xx - Provider errors (retryable)
+    
     if (status >= 500) {
       return this.createBoundaryError(
         "provider",
@@ -343,7 +296,7 @@ export class GitHubAdapter implements ProviderAdapter {
       );
     }
 
-    // Other 4xx - Validation errors (not retryable)
+    
     if (status >= 400) {
       return this.createBoundaryError(
         "validation",
@@ -356,7 +309,7 @@ export class GitHubAdapter implements ProviderAdapter {
       );
     }
 
-    // Unknown status - treat as provider error
+    
     return this.createBoundaryError(
       "provider",
       false,
@@ -368,12 +321,7 @@ export class GitHubAdapter implements ProviderAdapter {
     );
   }
 
-  /**
-   * Authentication strategy for GitHub.
-   * 
-   * GitHub uses Bearer token authentication.
-   * Token expiry is not explicitly signaled by GitHub - 401 indicates invalid token.
-   */
+  
   async authStrategy(config: AuthConfig): Promise<AuthToken> {
     if (!config.token) {
       throw this.createBoundaryError(
@@ -384,24 +332,16 @@ export class GitHubAdapter implements ProviderAdapter {
       );
     }
 
-    // GitHub tokens don't have explicit expiry in the config
-    // If token is invalid, API will return 401
+    
+    
     return {
       token: config.token,
     };
   }
 
-  /**
-   * Rate limit policy for GitHub.
-   *
-   * GitHub provides rate limit information in response headers:
-   * - X-RateLimit-Limit: Total requests allowed per window
-   * - X-RateLimit-Remaining: Requests remaining in current window
-   * - X-RateLimit-Reset: Unix timestamp when window resets
-   * - X-RateLimit-Used: Requests used in current window (not needed)
-   */
+  
   rateLimitPolicy(headers: Headers): RateLimitInfo {
-    // Use hardened header parser for safe extraction
+    
     const parsed = parseRateLimitHeaders(headers);
 
     if (parsed) {
@@ -412,29 +352,25 @@ export class GitHubAdapter implements ProviderAdapter {
       };
     }
 
-    // Fallback with defaults if headers missing or malformed
+    
     return {
-      limit: 5000, // Default for authenticated requests
+      limit: 5000, 
       remaining: 5000,
-      reset: new Date(Date.now() + 60 * 60 * 1000), // 1 hour from now
+      reset: new Date(Date.now() + 60 * 60 * 1000), 
     };
   }
 
-  /**
-   * Returns the pagination strategy for GitHub.
-   */
+  
   paginationStrategy(): PaginationStrategy {
     return new GitHubPaginationStrategy();
   }
 
-  /**
-   * Returns idempotency configuration for GitHub.
-   */
+  
   getIdempotencyConfig(): IdempotencyConfig {
     return {
       defaultSafeOperations: new Set(["GET", "HEAD", "OPTIONS"]),
       operationOverrides: new Map([
-        // POST operations that are safe with idempotency keys
+        
         [
           "POST /repos/:owner/:repo/pulls",
           IdempotencyLevel.CONDITIONAL,
@@ -443,20 +379,18 @@ export class GitHubAdapter implements ProviderAdapter {
           "POST /repos/:owner/:repo/issues",
           IdempotencyLevel.CONDITIONAL,
         ],
-        // Search endpoints can mutate rate limits aggressively
+        
         ["GET /search/code", IdempotencyLevel.UNSAFE],
         ["GET /search/repositories", IdempotencyLevel.UNSAFE],
         ["GET /search/users", IdempotencyLevel.UNSAFE],
-        // DELETE operations are idempotent
+        
         ["DELETE /repos/:owner/:repo", IdempotencyLevel.IDEMPOTENT],
         ["DELETE /repos/:owner/:repo/issues/:issue_number", IdempotencyLevel.IDEMPOTENT],
       ]),
     };
   }
 
-  /**
-   * Helper to create BoundaryError instances.
-   */
+  
   private createBoundaryError(
     category: BoundaryError["category"],
     retryable: boolean,
@@ -474,9 +408,7 @@ export class GitHubAdapter implements ProviderAdapter {
     );
   }
 
-  /**
-   * Helper to extract header values from Headers or Record.
-   */
+  
   private getHeaderValue(
     headers: Headers | Record<string, string> | undefined,
     name: string
@@ -489,7 +421,7 @@ export class GitHubAdapter implements ProviderAdapter {
       return headers.get(name);
     }
 
-    // Case-insensitive lookup for Record
+    
     const lowerName = name.toLowerCase();
     for (const [key, value] of Object.entries(headers)) {
       if (key.toLowerCase() === lowerName) {
@@ -500,10 +432,7 @@ export class GitHubAdapter implements ProviderAdapter {
     return null;
   }
 
-  /**
-   * Extracts retry-after from headers.
-   * Handles both Retry-After header and X-RateLimit-Reset.
-   */
+  
   private extractRetryAfter(
     headers: Headers | Record<string, string> | undefined
   ): Date | undefined {
@@ -511,21 +440,21 @@ export class GitHubAdapter implements ProviderAdapter {
       return undefined;
     }
 
-    // Convert to Headers if needed for parseRetryAfter
+    
     const retryAfterValue = this.getHeaderValue(headers, "Retry-After");
     const parsed = parseRetryAfter(retryAfterValue);
     if (parsed) {
       return parsed;
     }
 
-    // Fallback to X-RateLimit-Reset using hardened parser
+    
     const resetValue = this.getHeaderValue(headers, "X-RateLimit-Reset");
     if (resetValue) {
-      // X-RateLimit-Reset is a Unix timestamp (seconds)
+      
       const timestamp = parseInt(resetValue.trim(), 10);
       if (!isNaN(timestamp) && timestamp > 0) {
         const now = Math.floor(Date.now() / 1000);
-        // Validate it's reasonable (within 1 year)
+        
         if (timestamp >= now - 60 && timestamp < now + 86400 * 365) {
           return new Date(timestamp * 1000);
         }

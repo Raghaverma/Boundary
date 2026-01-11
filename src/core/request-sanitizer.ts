@@ -19,13 +19,13 @@ export function sanitizeRequestOptions(options: RequestOptions | undefined, opts
 
   const sanitized: RequestOptions = { ...input };
 
-  // Sanitize headers
+  
   if (sanitized.headers) {
     const headersCopy: Record<string, string> = {};
     for (const [k, v] of Object.entries(sanitized.headers)) {
-      const lower = k.toLowerCase().replace(/[-_]/g, ""); // Normalize hyphens/underscores
+      const lower = k.toLowerCase().replace(/[-_]/g, ""); 
       const lowerValue = String(v).toLowerCase();
-      // Check if key (normalized) or value contains any redacted term
+      
       if (redacted.some(r => {
         const normalizedR = r.replace(/[-_]/g, "");
         return lower.includes(normalizedR) || lowerValue.includes(r);
@@ -38,13 +38,13 @@ export function sanitizeRequestOptions(options: RequestOptions | undefined, opts
     sanitized.headers = headersCopy;
   }
 
-  // Sanitize query params
+  
   if (sanitized.query) {
     const queryCopy: Record<string, string | number | boolean> = {};
     for (const [k, v] of Object.entries(sanitized.query)) {
-      const lower = k.toLowerCase().replace(/[-_]/g, ""); // Normalize hyphens/underscores
+      const lower = k.toLowerCase().replace(/[-_]/g, ""); 
       const lowerValue = String(v).toLowerCase();
-      // Check if key (normalized) or value contains any redacted term
+      
       if (redacted.some(r => {
         const normalizedR = r.replace(/[-_]/g, "");
         return lower.includes(normalizedR) || lowerValue.includes(r);
@@ -57,9 +57,9 @@ export function sanitizeRequestOptions(options: RequestOptions | undefined, opts
     sanitized.query = queryCopy;
   }
 
-  // Sanitize body
+  
   if (sanitized.body !== undefined) {
-    // If body key is considered sensitive, redact entirely
+    
     if (redacted.includes("body")) {
       sanitized.body = "[REDACTED]";
     }

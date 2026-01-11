@@ -1,6 +1,4 @@
-/**
- * Boundary SDK - Main entry point
- */
+
 
 import type {
   BoundaryConfig,
@@ -22,36 +20,28 @@ import { assertValidAdapter } from "./core/adapter-validator.js";
 import { GitHubAdapter } from "./providers/github/adapter.js";
 import { sanitizeObject } from "./core/observability-sanitizer.js";
 
-/**
- * Lazy-instantiated built-in adapters.
- * Adapter classes are imported at module load, but instances are only
- * created when first requested, reducing memory usage when not all
- * providers are used.
- */
+
 const BUILTIN_ADAPTER_CLASSES: Record<string, new () => ProviderAdapter> = {
   github: GitHubAdapter,
 };
 
-/**
- * Gets a built-in adapter by name, instantiating lazily if needed.
- * Adapters are scoped per Boundary instance to prevent config sharing.
- */
+
 function getBuiltinAdapter(
   name: string,
   cache: Map<string, ProviderAdapter>
 ): ProviderAdapter | null {
-  // Check instance-scoped cache first
+  
   if (cache.has(name)) {
     return cache.get(name)!;
   }
 
-  // Check if class exists
+  
   const AdapterClass = BUILTIN_ADAPTER_CLASSES[name];
   if (!AdapterClass) {
     return null;
   }
 
-  // Create and cache the adapter instance (lazy instantiation, scoped to instance)
+  
   const adapter = new AdapterClass();
   cache.set(name, adapter);
   return adapter;
@@ -66,11 +56,7 @@ export interface ProviderClient {
   paginate<T = unknown>(endpoint: string, options?: RequestOptions): AsyncGenerator<NormalizedResponse<T>>;
 }
 
-/**
- * Interface for external state storage (e.g., Redis).
- * Implement this to persist circuit breaker and rate limiter state
- * across serverless function invocations or multiple instances.
- */
+
 export class Boundary {
   private config: BoundaryConfig;
   private pipelines: Map<string, RequestPipeline> = new Map();
@@ -81,14 +67,14 @@ export class Boundary {
   private adapterCache: Map<string, ProviderAdapter> = new Map();
 
   private constructor(config: BoundaryConfig, adapters?: Map<string, ProviderAdapter>) {
-    // Validate configuration
+    
     this.validateConfig(config);
 
-    // Normalize config: support both { providers: {...} } and { github: {...} } shapes
+    
     const providers = "providers" in config && config.providers
       ? config.providers
       : (() => {
-          // Extract provider configs from top-level keys (excluding known config keys)
+          
           const knownKeys = new Set([
             "defaults",
             "schemaValidation",
@@ -111,18 +97,18 @@ export class Boundary {
           return providerConfigs;
         })();
     
-    // Reconstruct normalized config
+    
     this.config = {
       ...config,
       providers,
     };
     
-    // Store adapters if provided
+    
     if (adapters) {
       this.adapters = adapters;
     }
 
-    // Setup observability
+    
     if (Array.isArray(this.config.observability)) {
       this.observability = this.config.observability;
     } else if (this.config.observability) {
@@ -131,27 +117,21 @@ export class Boundary {
       this.observability = [new ConsoleObservability()];
     }
 
-    // NOTE: Provider validation and initialization happens during `start()`.
-    // This ensures async adapter checks (authStrategy) are awaited and
-    // startup deterministically fails when adapters are invalid.
+    
+    
+    
   }
 
-  /**
-   * Async factory that constructs and starts Boundary.
-   * This enforces async initialization and makes startup deterministic.
-   */
+  
   static async create(config: BoundaryConfig, adapters?: Map<string, ProviderAdapter>) {
     const b = new Boundary(config, adapters);
     await b.start();
     return b;
   }
 
-  /**
-   * Emits a warning about in-memory state that resets on cold starts.
-   * This helps developers understand the limitations in serverless environments.
-   */
+  
   private emitLocalStateWarning(): void {
-    // Use observability adapter if available, otherwise use console
+    
     const warning = [
       "[Boundary] WARNING: Using in-memory state for circuit breaker and rate limiter.",
       "This state will be lost on process restart or serverless cold start.",
@@ -162,14 +142,14 @@ export class Boundary {
       "See: https://github.com/Raghaverma/Boundary#state-persistence",
     ].join("\n");
 
-    // Log through observability if available, otherwise console
-    // Sanitize metadata to ensure no secrets leak
+    
+    
     const safeMetadata = sanitizeObject(
       { component: "Boundary", type: "state_warning" },
       this.config.observabilitySanitizer
     );
     if (this.observability && this.observability.length > 0) {
-      // Safely broadcast warning to observability adapters (non-blocking)
+      
       const errors: Array<{ adapter: string; error: unknown }> = [];
       for (const obs of this.observability) {
         try {
@@ -182,26 +162,26 @@ export class Boundary {
         }
       }
 
-      // If all adapters failed, fall back to console.warn
+      
       if (errors.length === this.observability.length) {
         console.warn(warning);
         console.error(
           `[Boundary] All observability adapters failed for logWarning:\n${errors
             .map(
               ({ adapter, error }) =>
-                `  - ${adapter}: ${error instanceof Error ? error.message : String(error)}`
+                
             )
-            .join("\n")}`
+            .join()}`
         );
       } else if (errors.length > 0) {
-        // Some adapters failed - log errors but don't fallback (partial observability succeeded)
+        
         console.error(
           `[Boundary] Some observability adapters failed for logWarning (${errors.length}/${this.observability.length}):\n${errors
             .map(
               ({ adapter, error }) =>
-                `  - ${adapter}: ${error instanceof Error ? error.message : String(error)}`
+                
             )
-            .join("\n")}`
+            .join()}`
         );
       }
     } else {
@@ -212,7 +192,7 @@ export class Boundary {
   private validateConfig(config: BoundaryConfig): void {
     const errors: string[] = [];
 
-    // Validate default rate limit config
+    
     if (config.defaults?.rateLimit) {
       const { tokensPerSecond, maxTokens, queueSize } = config.defaults.rateLimit;
       if (tokensPerSecond !== undefined && tokensPerSecond <= 0) {
@@ -226,7 +206,7 @@ export class Boundary {
       }
     }
 
-    // Validate default retry config
+    
     if (config.defaults?.retry) {
       const { maxRetries, baseDelay, maxDelay } = config.defaults.retry;
       if (maxRetries !== undefined && maxRetries < 0) {
@@ -240,7 +220,7 @@ export class Boundary {
       }
     }
 
-    // Validate default circuit breaker config
+    
     if (config.defaults?.circuitBreaker) {
       const { failureThreshold, timeout, successThreshold } = config.defaults.circuitBreaker;
       if (failureThreshold !== undefined && failureThreshold <= 0) {
@@ -254,13 +234,13 @@ export class Boundary {
       }
     }
 
-    // Validate default timeout
+    
     if (config.defaults?.timeout !== undefined && config.defaults.timeout <= 0) {
       errors.push("defaults.timeout must be positive");
     }
 
     if (errors.length > 0) {
-      throw new Error(`Invalid Boundary configuration:\n  - ${errors.join("\n  - ")}`);
+      throw new Error(`Invalid Boundary configuration:\n  - ${errors.join()}`);
     }
   }
 
@@ -268,10 +248,10 @@ export class Boundary {
     providerName: string,
     providerConfig: ProviderConfig
   ): Promise<void> {
-    // Get adapter from config, adapters map, built-in adapters (lazy-loaded), or throw error
+    
     let adapter = providerConfig.adapter ?? this.adapters.get(providerName);
 
-    // Auto-register built-in adapter if available (lazy-loaded on demand, scoped to instance)
+    
     if (!adapter) {
       const builtinAdapter = getBuiltinAdapter(providerName, this.adapterCache);
       if (builtinAdapter) {
@@ -286,13 +266,13 @@ export class Boundary {
       );
     }
 
-    // Validate adapter contract - fail fast if non-compliant
+    
     await assertValidAdapter(adapter, providerName);
 
-    // Store adapter for later use in createProviderClient
+    
     this.adapters.set(providerName, adapter);
 
-    // Setup circuit breaker
+    
     const circuitBreakerConfig = {
       ...this.config.defaults?.circuitBreaker,
       ...providerConfig.circuitBreaker,
@@ -303,14 +283,14 @@ export class Boundary {
     );
     this.circuitBreakers.set(providerName, circuitBreaker);
 
-    // Setup rate limiter
+    
     const rateLimitConfig = {
       ...this.config.defaults?.rateLimit,
       ...providerConfig.rateLimit,
     };
     const rateLimiter = new RateLimiter(rateLimitConfig);
 
-    // Setup retry strategy
+    
     const retryConfig = {
       ...this.config.defaults?.retry,
       ...providerConfig.retry,
@@ -325,7 +305,7 @@ export class Boundary {
     );
     const retryStrategy = new RetryStrategy(retryConfig, idempotencyResolver);
 
-    // Create pipeline
+    
     const pipelineConfig: PipelineConfig = {
       provider: providerName,
       adapter,
@@ -346,7 +326,7 @@ export class Boundary {
 
     this.pipelines.set(providerName, pipeline);
 
-    // Create provider client
+    
     (this as any)[providerName] = this.createProviderClient(providerName);
   }
 
@@ -356,8 +336,8 @@ export class Boundary {
     if (!adapter) {
       throw new Error(`Adapter not found for provider: ${providerName}`);
     }
-    const boundary = this; // Capture for use in closures
-    const maxPages = 1000; // Maximum pages to prevent infinite loops
+    const boundary = this; 
+    const maxPages = 1000; 
 
     const makeRequest = async <T>(
       method: string,
@@ -376,7 +356,7 @@ export class Boundary {
       options: RequestOptions = {}
     ): AsyncGenerator<NormalizedResponse<T>> {
       boundary.ensureStarted();
-      // Re-get adapter to ensure it's available (defensive)
+      
       const currentAdapter = boundary.adapters.get(providerName);
       if (!currentAdapter) {
         throw new Error(`Adapter not found for provider: ${providerName}`);
@@ -384,13 +364,13 @@ export class Boundary {
       let currentEndpoint = endpoint;
       let currentOptions: RequestOptions = { ...options, method: "GET" };
       let pageCount = 0;
-      const seenCursors = new Set<string>(); // Cycle detection per pagination call
+      const seenCursors = new Set<string>(); 
 
       const paginationStrategy = currentAdapter.paginationStrategy();
 
-      // Fail-fast: enforce max page limit deterministically
-      // Loop condition ensures we never exceed maxPages requests
-      // This prevents infinite loops and ensures bounded execution
+      
+      
+      
       while (pageCount < maxPages) {
         const response = await makeRequest<T>("GET", currentEndpoint, currentOptions);
         pageCount++;
@@ -401,12 +381,12 @@ export class Boundary {
         const cursor = response.meta.pagination?.cursor;
 
         if (!hasNext || !cursor) {
-          // Natural termination: no more pages
+          
           break;
         }
 
-        // Cycle detection: if we've seen this cursor before, we're in a loop
-        // Check BEFORE making next request (fail-fast)
+        
+        
         if (seenCursors.has(cursor)) {
           throw new Error(
             `Pagination cycle detected: cursor "${cursor}" was encountered twice. ` +
@@ -424,11 +404,11 @@ export class Boundary {
         currentOptions = next.options;
       }
 
-      // Final check: if we exited loop due to limit and still have more pages, throw
-      // This ensures we fail explicitly when hitting the limit, not silently stop
+      
+      
       if (pageCount >= maxPages) {
-        // Check if there would be more pages (requires one more request to know)
-        // Since we can't know without making the request, we throw based on limit being reached
+        
+        
         throw new Error(
           `Pagination limit reached: ${maxPages} pages. ` +
           `This may indicate an infinite pagination loop. Consider using a more specific query.`
@@ -458,49 +438,14 @@ export class Boundary {
     return circuitBreaker?.getStatus() ?? null;
   }
 
-  /**
-   * Type-safe provider access method with runtime validation.
-   *
-   * **Compile-Time Safety Limitation:**
-   * True compile-time safety for provider lookup is impossible without breaking changes because:
-   * - Providers are registered dynamically at runtime via config
-   * - Custom provider names cannot be known at compile time
-   * - Dynamic property access (boundary.github) requires type casts
-   *
-   * **Current Guarantees:**
-   * - Runtime validation ensures provider exists before returning
-   * - Method overloads provide autocomplete for built-in providers
-   * - Returns undefined for unregistered providers (no exceptions)
-   *
-   * **Alternatives:**
-   * - Use direct property access: `boundary.github.get(...)` (runtime-only safety)
-   * - Use this method with runtime checks: `if (boundary.provider("github"))`
-   *
-   * @param name - Provider name (e.g., "github" for built-ins, or custom provider name)
-   * @returns Provider client if registered, undefined otherwise
-   *
-   * @example
-   * ```typescript
-   * // Built-in provider (with autocomplete)
-   * const github = boundary.provider("github");
-   * if (github) {
-   *   const response = await github.get("/user");
-   * }
-   *
-   * // Custom provider (runtime validation only)
-   * const custom = boundary.provider("my-custom-provider");
-   * if (custom) {
-   *   await custom.post("/endpoint", { body: { ... } });
-   * }
-   * ```
-   */
+  
   provider(name: "github"): ProviderClient | undefined;
   provider(name: string): ProviderClient | undefined;
   provider(name: string): ProviderClient | undefined {
     this.ensureStarted();
-    // Type assertion is necessary due to dynamic property assignment.
-    // This is the unavoidable cost of runtime provider registration.
-    // The sanitizer ensures that only valid ProviderClient instances are assigned.
+    
+    
+    
     return (this as any)[name] as ProviderClient | undefined;
   }
 
@@ -510,33 +455,29 @@ export class Boundary {
     config: ProviderConfig
   ): Promise<void> {
     this.ensureStarted();
-    // Store adapter
+    
     this.adapters.set(name, adapter);
     
-    // Ensure providers object exists
+    
     if (!this.config.providers) {
       this.config.providers = {};
     }
     
-    // Update config
+    
     this.config.providers[name] = {
       ...config,
-      adapter, // Also store in config for consistency
+      adapter, 
     };
     
-    // Initialize provider if already started
+    
     if (this.started) {
       await this.initializeProvider(name, this.config.providers[name]!);
     }
   }
 
-  /**
-   * Async lifecycle start.
-   * Validates adapters (including async `authStrategy`) and initializes providers.
-   * Enforces deployment mode constraints (e.g., requiring `stateStorage` in distributed mode).
-   */
+  
   async start(): Promise<void> {
-    // Fail-closed: In distributed mode, StateStorage is REQUIRED
+    
     if (this.config.mode === "distributed" && !this.config.stateStorage) {
       throw new Error(
         "Boundary requires a configured stateStorage in 'distributed' mode. " +
@@ -545,8 +486,8 @@ export class Boundary {
       );
     }
 
-    // Fail-closed: Require StateStorage unless localUnsafe is explicitly true
-    // This prevents accidental use of in-memory state in production
+    
+    
     if (!this.config.stateStorage && !this.config.localUnsafe && this.config.mode !== "local") {
       throw new Error(
         "Boundary requires a configured stateStorage unless 'localUnsafe' is set to true. " +
@@ -555,14 +496,14 @@ export class Boundary {
       );
     }
 
-    // Initialize providers with async validation
+    
     if (this.config.providers) {
       for (const [providerName, providerConfig] of Object.entries(this.config.providers)) {
         await this.initializeProvider(providerName, providerConfig as ProviderConfig);
       }
     }
 
-    // If using in-memory state and not distributed, emit warning (only if localUnsafe is true)
+    
     if (this.config.mode !== "distributed" && this.config.localUnsafe) {
       this.emitLocalStateWarning();
     }
@@ -570,10 +511,7 @@ export class Boundary {
     this.started = true;
   }
 
-  /**
-   * Runtime guard: Ensures SDK is initialized before use.
-   * Throws synchronously if start() has not completed.
-   */
+  
   private ensureStarted(): void {
     if (!this.started) {
       throw new Error(
@@ -584,10 +522,10 @@ export class Boundary {
   }
 }
 
-// Export types and utilities
+
 export * from "./core/types.js";
 export * from "./observability/index.js";
 export * from "./strategies/index.js";
 export * from "./validation/index.js";
-// Note: Adapters are NOT exported - they are internal implementation details
+
 

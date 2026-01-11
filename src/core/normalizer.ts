@@ -1,6 +1,4 @@
-/**
- * Response normalization
- */
+
 
 import type {
   NormalizedResponse,

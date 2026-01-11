@@ -1,6 +1,4 @@
-/**
- * Error normalization and mapping
- */
+
 
 import type { NormalizedError, ErrorType } from "./types.js";
 
@@ -11,11 +9,11 @@ export class ErrorMapper {
     defaultActionable: string = "An error occurred"
   ): NormalizedError {
     if (error instanceof Error && "type" in error) {
-      // Already normalized
+      
       return error as NormalizedError;
     }
 
-    // Network errors
+    
     if (error instanceof Error) {
       if (
         error.message.includes("ECONNRESET") ||
@@ -32,7 +30,7 @@ export class ErrorMapper {
       }
     }
 
-    // HTTP errors
+    
     if (
       typeof error === "object" &&
       error !== null &&
@@ -85,7 +83,7 @@ export class ErrorMapper {
       }
     }
 
-    // Generic error
+    
     return this.createError(
       "PROVIDER_ERROR",
       provider,
