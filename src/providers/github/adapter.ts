@@ -12,7 +12,7 @@ import type {
   AdapterInput,
   BuiltRequest,
 } from "../../core/types.js";
-import { BoundaryError, IdempotencyLevel } from "../../core/types.js";
+import { BoundaryError, IdempotencyLevel, SDK_VERSION } from "../../core/types.js";
 import { GitHubPaginationStrategy } from "./pagination.js";
 import { ResponseNormalizer } from "../../core/normalizer.js";
 import { parseRetryAfter, parseRateLimitHeaders } from "../../core/header-parser.js";
@@ -55,7 +55,7 @@ export class GitHubAdapter implements ProviderAdapter {
     
     const headers: Record<string, string> = {
       "Accept": "application/vnd.github.v3+json",
-      "User-Agent": "Boundary-SDK/1.0.0",
+      "User-Agent": `Boundary-SDK/${SDK_VERSION}`,
       ...options.headers,
     };
 
