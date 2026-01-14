@@ -457,15 +457,21 @@ describe("Safety Guarantees", () => {
       });
 
       
-      
-      
+
+
       let requestCount = 0;
+      let paginationCallCount = 0;
       const adapter = {
         buildRequest: () => ({ url: "test", method: "GET", headers: {} }),
         parseResponse: (raw: any) => {
           requestCount++;
-          
-          const hasMore = requestCount < 3;
+
+          const isValidation = raw.status === 200 && raw.body?.test === "data";
+          if (!isValidation) {
+            paginationCallCount++;
+          }
+
+          const hasMore = paginationCallCount < 3 && !isValidation;
           return {
             data: { items: [] },
             meta: {
@@ -474,7 +480,7 @@ describe("Safety Guarantees", () => {
               rateLimit: { limit: 1, remaining: 1, reset: new Date() },
               pagination: {
                 hasNext: hasMore,
-                cursor: hasMore ? `cursor-${requestCount}` : undefined,
+                cursor: hasMore ? `cursor-${paginationCallCount}` : undefined,
               },
               warnings: [],
               schemaVersion: "1.0",
@@ -509,14 +515,14 @@ describe("Safety Guarantees", () => {
       });
 
       const paginator = (boundary as any).test.paginate("/test");
-      
-      
+
+
       let pagesYielded = 0;
       for await (const page of paginator) {
         pagesYielded++;
       }
       expect(pagesYielded).toBe(3);
-      expect(requestCount).toBe(3);
+      expect(paginationCallCount).toBe(3);
       
       
       

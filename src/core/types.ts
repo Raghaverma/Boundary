@@ -44,19 +44,19 @@ export type BoundaryErrorCategory =
 
 
 export class BoundaryError extends Error {
-  
+
   category: BoundaryErrorCategory;
 
-  
+
   retryable: boolean;
 
-  
+
   provider: string;
 
-  
+
   metadata?: Record<string, unknown>;
 
-  
+
   retryAfter?: Date;
 
   constructor(
@@ -73,7 +73,7 @@ export class BoundaryError extends Error {
     this.provider = provider;
     this.retryable = retryable;
 
-    
+
     if (metadata !== undefined) {
       this.metadata = metadata;
     }
@@ -81,10 +81,18 @@ export class BoundaryError extends Error {
       this.retryAfter = retryAfter;
     }
 
-    
+
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, BoundaryError);
     }
+  }
+
+  /**
+   * Alias for category field.
+   * Provided for consistency with documented error contract.
+   */
+  get code(): BoundaryErrorCategory {
+    return this.category;
   }
 }
 

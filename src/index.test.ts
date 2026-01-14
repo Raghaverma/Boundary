@@ -44,4 +44,3 @@ describe("Boundary - Version Consistency", () => {
     expect(SDK_VERSION).toBe(packageJson.version);
   });
 });
-

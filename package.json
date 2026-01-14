@@ -2,13 +2,13 @@
   "name": "boundary-sdk",
   "version": "2.0.1",
   "description": "API Normalization SDK - A TypeScript-first SDK that enforces a single stable contract across all third-party API providers",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/public.js",
+  "types": "dist/public.d.ts",
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./dist/public.d.ts",
+      "import": "./dist/public.js"
     }
   },
   "files": [

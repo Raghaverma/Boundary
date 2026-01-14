@@ -5,7 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.1] - 2025-01-XX
+## [2.0.2] - 2025-01-XX
+
+### Changed
+- **Public API lockdown**: Package now exports from `src/public.ts` as the single public entry point. This restricts consumer access to only documented, stable APIs.
+- **Error contract enhancement**: `BoundaryError` now exposes a `code` getter as an alias for `category`. This provides forward compatibility with documented error contracts while maintaining backward compatibility.
+
+### Internal
+- Fixed incomplete code from prior refactoring in error message formatting
+- Corrected timeout error construction to use proper `BoundaryError` class instantiation
+- Improved code consistency across error handling paths
+
+## [2.0.1] - 2025-01-14
 
 ### Fixed
 - Fix incorrect internal package version. SDK_VERSION now correctly reads from package.json as single source of truth, eliminating version mismatches.

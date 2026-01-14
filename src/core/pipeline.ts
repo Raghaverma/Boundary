@@ -9,8 +9,8 @@ import type {
   ResponseContext,
   ErrorContext,
   RawResponse,
-  BoundaryError,
 } from "./types.js";
+import { BoundaryError } from "./types.js";
 import { ProviderCircuitBreaker } from "../strategies/circuit-breaker.js";
 import { RateLimiter } from "../strategies/rate-limit.js";
 import { RetryStrategy } from "../strategies/retry.js";
@@ -356,19 +356,17 @@ export class RequestPipeline {
     } catch (error) {
       
       if (error instanceof Error && error.name === "AbortError") {
-        const timeoutError: BoundaryError = {
-          name: "BoundaryError",
-          message: `Request timeout after ${timeout}ms`,
-          category: "network",
-          retryable: true, 
-          provider: this.config.provider,
-          metadata: {
+        throw new BoundaryError(
+          `Request timeout after ${timeout}ms`,
+          "network",
+          this.config.provider,
+          true,
+          {
             timeout,
             url: builtRequest.url,
             method: builtRequest.method,
-          },
-        };
-        throw timeoutError;
+          }
+        );
       }
       throw error;
     } finally {

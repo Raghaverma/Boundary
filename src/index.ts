@@ -169,9 +169,9 @@ export class Boundary {
           `[Boundary] All observability adapters failed for logWarning:\n${errors
             .map(
               ({ adapter, error }) =>
-                
+                `  - ${adapter}: ${error instanceof Error ? error.message : String(error)}`
             )
-            .join()}`
+            .join("\n")}`
         );
       } else if (errors.length > 0) {
         
@@ -179,9 +179,9 @@ export class Boundary {
           `[Boundary] Some observability adapters failed for logWarning (${errors.length}/${this.observability.length}):\n${errors
             .map(
               ({ adapter, error }) =>
-                
+                `  - ${adapter}: ${error instanceof Error ? error.message : String(error)}`
             )
-            .join()}`
+            .join("\n")}`
         );
       }
     } else {
@@ -381,7 +381,7 @@ export class Boundary {
         const cursor = response.meta.pagination?.cursor;
 
         if (!hasNext || !cursor) {
-          
+
           break;
         }
 

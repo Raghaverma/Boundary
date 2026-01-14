@@ -252,7 +252,7 @@ export class GitHubAdapter implements ProviderAdapter {
     
     if (status === 422) {
       const fieldErrors = body?.errors
-        ?.map((e) => `${e.field ?? }: ${e.message ?? e.code ?? }`)
+        ?.map((e) => `${e.field ?? "unknown"}: ${e.message ?? e.code ?? "validation error"}`)
         .join("; ");
       
       return this.createBoundaryError(

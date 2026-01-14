@@ -56,12 +56,13 @@ describe("GitHub Adapter - Contract Tests", () => {
 
   describe("parseResponse - Normalized Response Shape", () => {
     it("should normalize successful response with correct structure", () => {
+      const fixedTimestamp = 1700000000;
       const raw: RawResponse = {
         status: 200,
         headers: new Headers({
           "X-RateLimit-Limit": "5000",
           "X-RateLimit-Remaining": "4999",
-          "X-RateLimit-Reset": String(Math.floor(Date.now() / 1000) + 3600),
+          "X-RateLimit-Reset": String(fixedTimestamp),
           Link: '<https://api.github.com/user/repos?page=2>; rel="next"',
         }),
         body: { id: 1, login: "octocat" },
@@ -69,7 +70,7 @@ describe("GitHub Adapter - Contract Tests", () => {
 
       const normalized = adapter.parseResponse(raw);
 
-      
+
       expect(normalized).toHaveProperty("data");
       expect(normalized).toHaveProperty("meta");
       expect(normalized.meta).toHaveProperty("provider", "github");
@@ -79,8 +80,19 @@ describe("GitHub Adapter - Contract Tests", () => {
       expect(normalized.meta.rateLimit).toHaveProperty("reset");
       expect(normalized.meta.rateLimit.reset).toBeInstanceOf(Date);
 
-      
-      expect(normalized).toMatchSnapshot();
+
+      const snapshotNormalized = {
+        ...normalized,
+        meta: {
+          ...normalized.meta,
+          requestId: "test-request-id",
+          rateLimit: {
+            ...normalized.meta.rateLimit,
+            reset: new Date(fixedTimestamp * 1000),
+          },
+        },
+      };
+      expect(snapshotNormalized).toMatchSnapshot();
     });
 
     it("should extract pagination information correctly", () => {
