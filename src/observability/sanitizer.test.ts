@@ -46,6 +46,7 @@ class TestAdapter {
       "provider" as const,
       "test",
       false,
+      "",
       { secret: "should-not-be-logged", inner: { apiKey: "topsecret" } }
     );
   }

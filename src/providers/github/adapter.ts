@@ -179,7 +179,9 @@ export class GitHubAdapter implements ProviderAdapter {
         {
           githubMessage: body?.message,
           documentationUrl: body?.documentation_url,
-        }
+        },
+        undefined,
+        401
       );
     }
 
@@ -198,11 +200,12 @@ export class GitHubAdapter implements ProviderAdapter {
             githubMessage: body?.message,
             retryAfter: retryAfter?.toISOString(),
           },
-          retryAfter
+          retryAfter,
+          403
         );
       }
 
-      
+
       return this.createBoundaryError(
         "auth",
         false,
@@ -210,7 +213,9 @@ export class GitHubAdapter implements ProviderAdapter {
         {
           githubMessage: body?.message,
           documentationUrl: body?.documentation_url,
-        }
+        },
+        undefined,
+        403
       );
     }
 
@@ -218,16 +223,16 @@ export class GitHubAdapter implements ProviderAdapter {
     
     
     if (status === 404) {
-      
+
       const message = body?.message?.toLowerCase() ?? "";
       if (
         message.includes("not found") ||
         message.includes("does not exist") ||
         message.includes("not accessible")
       ) {
-        
-        
-        
+
+
+
         return this.createBoundaryError(
           "validation",
           false,
@@ -235,7 +240,9 @@ export class GitHubAdapter implements ProviderAdapter {
           {
             githubMessage: body?.message,
             note: "GitHub returns 404 for both missing resources and inaccessible resources",
-          }
+          },
+          undefined,
+          404
         );
       }
 
@@ -245,7 +252,9 @@ export class GitHubAdapter implements ProviderAdapter {
         "Resource not found.",
         {
           githubMessage: body?.message,
-        }
+        },
+        undefined,
+        404
       );
     }
 
@@ -254,7 +263,7 @@ export class GitHubAdapter implements ProviderAdapter {
       const fieldErrors = body?.errors
         ?.map((e) => `${e.field ?? "unknown"}: ${e.message ?? e.code ?? "validation error"}`)
         .join("; ");
-      
+
       return this.createBoundaryError(
         "validation",
         false,
@@ -264,11 +273,13 @@ export class GitHubAdapter implements ProviderAdapter {
         {
           githubMessage: body?.message,
           fieldErrors: body?.errors,
-        }
+        },
+        undefined,
+        422
       );
     }
 
-    
+
     if (status === 429) {
       const retryAfter = this.extractRetryAfter(headers);
       return this.createBoundaryError(
@@ -279,11 +290,12 @@ export class GitHubAdapter implements ProviderAdapter {
           githubMessage: body?.message,
           retryAfter: retryAfter?.toISOString(),
         },
-        retryAfter
+        retryAfter,
+        429
       );
     }
 
-    
+
     if (status >= 500) {
       return this.createBoundaryError(
         "provider",
@@ -292,11 +304,13 @@ export class GitHubAdapter implements ProviderAdapter {
         {
           status,
           githubMessage: body?.message,
-        }
+        },
+        undefined,
+        status
       );
     }
 
-    
+
     if (status >= 400) {
       return this.createBoundaryError(
         "validation",
@@ -305,11 +319,13 @@ export class GitHubAdapter implements ProviderAdapter {
         {
           status,
           githubMessage: body?.message,
-        }
+        },
+        undefined,
+        status
       );
     }
 
-    
+
     return this.createBoundaryError(
       "provider",
       false,
@@ -317,7 +333,9 @@ export class GitHubAdapter implements ProviderAdapter {
       {
         status,
         githubMessage: body?.message,
-      }
+      },
+      undefined,
+      status
     );
   }
 
@@ -328,7 +346,9 @@ export class GitHubAdapter implements ProviderAdapter {
         "auth",
         false,
         "GitHub authentication requires a token.",
-        {}
+        {},
+        undefined,
+        401
       );
     }
 
@@ -396,15 +416,18 @@ export class GitHubAdapter implements ProviderAdapter {
     retryable: boolean,
     message: string,
     metadata?: Record<string, unknown>,
-    retryAfter?: Date
+    retryAfter?: Date,
+    status?: number
   ): BoundaryError {
     return new BoundaryError(
       message,
       category,
       "github",
       retryable,
+      "",
       metadata,
-      retryAfter
+      retryAfter,
+      status
     );
   }
 

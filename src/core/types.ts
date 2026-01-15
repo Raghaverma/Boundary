@@ -36,11 +36,22 @@ export interface PaginationInfo {
 
 
 export type BoundaryErrorCategory =
-  | "auth"        
-  | "rate_limit"  
-  | "network"     
-  | "provider"    
-  | "validation"; 
+  | "auth"
+  | "rate_limit"
+  | "network"
+  | "provider"
+  | "validation";
+
+
+export type BoundaryErrorCode =
+  | "AUTH_FAILED"
+  | "RATE_LIMITED"
+  | "NOT_FOUND"
+  | "BAD_REQUEST"
+  | "UPSTREAM_5XX"
+  | "NETWORK_ERROR"
+  | "TIMEOUT"
+  | "UNKNOWN";
 
 
 export class BoundaryError extends Error {
@@ -54,6 +65,12 @@ export class BoundaryError extends Error {
   provider: string;
 
 
+  requestId: string;
+
+
+  status?: number;
+
+
   metadata?: Record<string, unknown>;
 
 
@@ -64,16 +81,22 @@ export class BoundaryError extends Error {
     category: BoundaryErrorCategory,
     provider: string,
     retryable: boolean,
+    requestId: string = "",
     metadata?: Record<string, unknown>,
-    retryAfter?: Date
+    retryAfter?: Date,
+    status?: number
   ) {
     super(message);
     this.name = "BoundaryError";
     this.category = category;
     this.provider = provider;
     this.retryable = retryable;
+    this.requestId = requestId;
 
 
+    if (status !== undefined) {
+      this.status = status;
+    }
     if (metadata !== undefined) {
       this.metadata = metadata;
     }
@@ -88,11 +111,55 @@ export class BoundaryError extends Error {
   }
 
   /**
-   * Alias for category field.
-   * Provided for consistency with documented error contract.
+   * Returns the frozen error code from the BoundaryErrorCode enum.
+   * Maps internal category to public error code contract.
    */
-  get code(): BoundaryErrorCategory {
-    return this.category;
+  get code(): BoundaryErrorCode {
+    return mapCategoryToErrorCode(this.category, this.status);
+  }
+}
+
+
+export function mapCategoryToErrorCode(category: BoundaryErrorCategory, status?: number): BoundaryErrorCode {
+  switch (category) {
+    case "auth":
+      return "AUTH_FAILED";
+    case "rate_limit":
+      return "RATE_LIMITED";
+    case "network":
+      return "NETWORK_ERROR";
+    case "validation":
+      if (status === 404) {
+        return "NOT_FOUND";
+      }
+      if (status && status >= 400 && status < 500) {
+        return "BAD_REQUEST";
+      }
+      return "BAD_REQUEST";
+    case "provider":
+      if (status && status >= 500) {
+        return "UPSTREAM_5XX";
+      }
+      return "UNKNOWN";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+
+export function isRetryableByCode(code: BoundaryErrorCode): boolean {
+  switch (code) {
+    case "NETWORK_ERROR":
+    case "TIMEOUT":
+    case "UPSTREAM_5XX":
+    case "RATE_LIMITED":
+      return true;
+    case "AUTH_FAILED":
+    case "NOT_FOUND":
+    case "BAD_REQUEST":
+    case "UNKNOWN":
+    default:
+      return false;
   }
 }
 

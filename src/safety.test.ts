@@ -332,7 +332,7 @@ describe("Safety Guarantees", () => {
         buildRequest: () => ({ url: "test", method: "GET", headers: {} }),
         parseResponse: () => ({ data: {}, meta: { provider: "test", requestId: "1", rateLimit: { limit: 1, remaining: 1, reset: new Date() }, warnings: [], schemaVersion: "1.0" } }),
         parseError: () => {
-          return new BoundaryError("test", "provider", "test", false);
+          return new BoundaryError("test", "provider", "test", false, "");
         },
         authStrategy: async (config: any) => {
           
@@ -405,7 +405,7 @@ describe("Safety Guarantees", () => {
           };
         },
         parseError: () => {
-          return new BoundaryError("test", "provider", "test", false);
+          return new BoundaryError("test", "provider", "test", false, "");
         },
         authStrategy: async () => ({ token: "test" }),
         rateLimitPolicy: () => ({ limit: 1, remaining: 1, reset: new Date() }),
@@ -488,7 +488,7 @@ describe("Safety Guarantees", () => {
           };
         },
         parseError: () => {
-          return new BoundaryError("test", "provider", "test", false);
+          return new BoundaryError("test", "provider", "test", false, "");
         },
         authStrategy: async () => ({ token: "test" }),
         rateLimitPolicy: () => ({ limit: 1, remaining: 1, reset: new Date() }),

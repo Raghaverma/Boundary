@@ -161,21 +161,21 @@ export async function validateAdapter(
           errors.push("parseError returned BoundaryError with non-boolean 'retryable' property");
         }
 
-        
+
         if (error.provider !== providerName) {
           errors.push(
             `parseError returned provider '${error.provider}', expected '${providerName}'`
           );
         }
 
-        
-        if ("status" in error && typeof (error as any).status === "number") {
+
+        if (typeof error.requestId !== "string") {
           errors.push(
-            "parseError MUST NOT leak provider-specific fields (like 'status'). Use metadata instead."
+            "parseError must return BoundaryError with requestId as string"
           );
         }
 
-        
+
         const providerSpecificFields = ["documentation_url", "github_message", "stripe_error"];
         for (const field of providerSpecificFields) {
           if (field in error && !(field in Error.prototype)) {

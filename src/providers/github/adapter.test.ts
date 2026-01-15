@@ -370,10 +370,12 @@ describe("GitHub Adapter - Contract Tests", () => {
 
       const error = adapter.parseError(raw);
 
-      
+
       expect(error).toBeInstanceOf(Error);
-      expect((error as any).status).toBeUndefined();
       expect((error as any).body).toBeUndefined();
+
+
+      expect(typeof error.status).toBe("number");
     });
 
     it("should ALWAYS return canonical error categories", () => {

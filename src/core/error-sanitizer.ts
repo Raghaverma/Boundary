@@ -120,48 +120,57 @@ function inferRetryable(category: BoundaryErrorCategory, error: unknown): boolea
 
 export function sanitizeBoundaryError(
   error: unknown,
-  expectedProvider: string
+  expectedProvider: string,
+  requestId: string = ""
 ): BoundaryError {
-  
+
   if (!error) {
-    return createFallbackError("Unknown error", expectedProvider);
+    return createFallbackError("Unknown error", expectedProvider, requestId);
   }
 
-  
+
   if (typeof error !== "object") {
-    return createFallbackError(String(error), expectedProvider);
+    return createFallbackError(String(error), expectedProvider, requestId);
   }
 
   const err = error as Record<string, unknown>;
 
-  
+
   const message = typeof err.message === "string" && err.message.length > 0
     ? err.message
     : "Unknown error";
 
-  
+
   const rawCategory = err.category;
   const category: BoundaryErrorCategory = isValidCategory(rawCategory)
     ? rawCategory
     : inferCategory(error);
 
-  
+
   const rawRetryable = err.retryable;
   const retryable: boolean = typeof rawRetryable === "boolean"
     ? rawRetryable
     : inferRetryable(category, error);
 
-  
+
   const provider = expectedProvider;
 
-  
-  
-  
-  
+
+  const errorRequestId = typeof err.requestId === "string" && err.requestId.length > 0
+    ? err.requestId
+    : requestId;
+
+
+  const status = typeof err.status === "number" ? err.status : undefined;
+
+
+
+
+
   const rawMetadata = err.metadata as Record<string, unknown> | undefined;
   const metadata = rawMetadata ? sanitizeErrorMetadata(rawMetadata) : undefined;
 
-  
+
   let retryAfter: Date | undefined;
   if (err.retryAfter instanceof Date) {
     retryAfter = err.retryAfter;
@@ -174,25 +183,28 @@ export function sanitizeBoundaryError(
     }
   }
 
-  
+
   const sanitized = new BoundaryError(
     message,
     category,
     provider,
     retryable,
+    errorRequestId,
     metadata,
-    retryAfter
+    retryAfter,
+    status
   );
 
   return sanitized;
 }
 
 
-function createFallbackError(message: string, provider: string): BoundaryError {
+function createFallbackError(message: string, provider: string, requestId: string = ""): BoundaryError {
   return new BoundaryError(
     message,
     "provider",
     provider,
-    false
+    false,
+    requestId
   );
 }

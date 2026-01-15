@@ -208,16 +208,16 @@ export class RequestPipeline {
     } catch (error) {
       const duration = Date.now() - startTime;
 
-      
-      
+
+
       let boundaryError: BoundaryError;
       try {
         const adapterError = this.config.adapter.parseError(error);
-        
-        
-        boundaryError = sanitizeBoundaryError(adapterError, this.config.provider);
+
+
+        boundaryError = sanitizeBoundaryError(adapterError, this.config.provider, requestId);
       } catch (parseError) {
-        
+
         boundaryError = sanitizeBoundaryError(
           {
             message: error instanceof Error ? error.message : String(error),
@@ -226,7 +226,8 @@ export class RequestPipeline {
               parseError: parseError instanceof Error ? parseError.message : parseError,
             },
           },
-          this.config.provider
+          this.config.provider,
+          requestId
         );
       }
 
@@ -354,18 +355,21 @@ export class RequestPipeline {
         body,
       } as RawResponse;
     } catch (error) {
-      
+
       if (error instanceof Error && error.name === "AbortError") {
         throw new BoundaryError(
           `Request timeout after ${timeout}ms`,
           "network",
           this.config.provider,
           true,
+          "",
           {
             timeout,
             url: builtRequest.url,
             method: builtRequest.method,
-          }
+          },
+          undefined,
+          undefined
         );
       }
       throw error;

@@ -172,9 +172,10 @@ describe("Consumer Contract - Public API Only", () => {
         // Verify error has required fields
         expect(boundaryError).toHaveProperty("message");
         expect(boundaryError).toHaveProperty("category");
-        expect(boundaryError).toHaveProperty("code"); // Alias for category
+        expect(boundaryError).toHaveProperty("code");
         expect(boundaryError).toHaveProperty("provider");
         expect(boundaryError).toHaveProperty("retryable");
+        expect(boundaryError).toHaveProperty("requestId");
 
         // Verify types
         expect(typeof boundaryError.message).toBe("string");
@@ -182,9 +183,11 @@ describe("Consumer Contract - Public API Only", () => {
         expect(typeof boundaryError.code).toBe("string");
         expect(typeof boundaryError.provider).toBe("string");
         expect(typeof boundaryError.retryable).toBe("boolean");
+        expect(typeof boundaryError.requestId).toBe("string");
 
-        // Verify code is alias for category
-        expect(boundaryError.code).toBe(boundaryError.category);
+        // Verify code is from frozen BoundaryErrorCode enum
+        const validCodes = ["AUTH_FAILED", "RATE_LIMITED", "NOT_FOUND", "BAD_REQUEST", "UPSTREAM_5XX", "NETWORK_ERROR", "TIMEOUT", "UNKNOWN"];
+        expect(validCodes).toContain(boundaryError.code);
 
         // Verify provider is set
         expect(boundaryError.provider).toBe("github");
@@ -291,6 +294,136 @@ describe("Consumer Contract - Public API Only", () => {
         expect(err.message).not.toMatch(/\.ts/);
         expect(err.message).not.toMatch(/Pipeline/);
         expect(err.message).not.toMatch(/Adapter/);
+      }
+    });
+  });
+
+  describe("6. Frozen Contracts - Phase 2", () => {
+    it("should guarantee meta.provider is always present", async () => {
+      const client = await Boundary.create({
+        github: {
+          auth: { token: "test-token" },
+        },
+        localUnsafe: true,
+      });
+
+      const github = client.provider("github") as ProviderClient;
+      const response = await github.get("/success");
+
+      expect(response.meta.provider).toBe("github");
+      expect(typeof response.meta.provider).toBe("string");
+    });
+
+    it("should guarantee meta.requestId is always present and unique", async () => {
+      const client = await Boundary.create({
+        github: {
+          auth: { token: "test-token" },
+        },
+        localUnsafe: true,
+      });
+
+      const github = client.provider("github") as ProviderClient;
+      const response1 = await github.get("/success");
+      const response2 = await github.get("/success");
+
+      expect(typeof response1.meta.requestId).toBe("string");
+      expect(response1.meta.requestId.length).toBeGreaterThan(0);
+
+      expect(typeof response2.meta.requestId).toBe("string");
+      expect(response2.meta.requestId.length).toBeGreaterThan(0);
+
+      // Request IDs must be unique
+      expect(response1.meta.requestId).not.toBe(response2.meta.requestId);
+    });
+
+    it("should enforce error codes are from closed BoundaryErrorCode set", async () => {
+      const client = await Boundary.create({
+        github: {
+          auth: { token: "test-token" },
+        },
+        localUnsafe: true,
+      });
+
+      const github = client.provider("github") as ProviderClient;
+
+      const validCodes = ["AUTH_FAILED", "RATE_LIMITED", "NOT_FOUND", "BAD_REQUEST", "UPSTREAM_5XX", "NETWORK_ERROR", "TIMEOUT", "UNKNOWN"];
+
+      try {
+        await github.get("/error");
+      } catch (error) {
+        const err = error as BoundaryError;
+        expect(validCodes).toContain(err.code);
+      }
+    });
+
+    it("should enforce deterministic retryable semantics", async () => {
+      const client = await Boundary.create({
+        github: {
+          auth: { token: "test-token" },
+        },
+        localUnsafe: true,
+      });
+
+      const github = client.provider("github") as ProviderClient;
+
+      // Frozen contract: These error codes MUST have retryable === false
+      const neverRetryable = ["AUTH_FAILED", "NOT_FOUND", "BAD_REQUEST"];
+
+      // Frozen contract: These error codes MUST have retryable === true
+      const alwaysRetryable = ["NETWORK_ERROR", "UPSTREAM_5XX", "RATE_LIMITED"];
+
+      try {
+        await github.get("/error");
+      } catch (error) {
+        const err = error as BoundaryError;
+
+        if (neverRetryable.includes(err.code)) {
+          expect(err.retryable).toBe(false);
+        }
+
+        if (alwaysRetryable.includes(err.code)) {
+          expect(err.retryable).toBe(true);
+        }
+      }
+    });
+
+    it("should always populate error.requestId", async () => {
+      const client = await Boundary.create({
+        github: {
+          auth: { token: "test-token" },
+        },
+        localUnsafe: true,
+      });
+
+      const github = client.provider("github") as ProviderClient;
+
+      try {
+        await github.get("/error");
+      } catch (error) {
+        const err = error as BoundaryError;
+        expect(typeof err.requestId).toBe("string");
+        expect(err.requestId.length).toBeGreaterThan(0);
+      }
+    });
+
+    it("should expose status on errors when available", async () => {
+      const client = await Boundary.create({
+        github: {
+          auth: { token: "test-token" },
+        },
+        localUnsafe: true,
+      });
+
+      const github = client.provider("github") as ProviderClient;
+
+      try {
+        await github.get("/error");
+      } catch (error) {
+        const err = error as BoundaryError;
+        // Status should be present for HTTP errors
+        if (err.status !== undefined) {
+          expect(typeof err.status).toBe("number");
+        }
       }
     });
   });

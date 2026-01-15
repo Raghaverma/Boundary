@@ -23,7 +23,7 @@ export type {
 
 // Error type - frozen contract
 export { BoundaryError } from "./core/types.js";
-export type { BoundaryErrorCategory } from "./core/types.js";
+export type { BoundaryErrorCategory, BoundaryErrorCode } from "./core/types.js";
 
 // Auth types
 export type { AuthConfig, AuthToken } from "./core/types.js";

@@ -15,6 +15,7 @@ export class CircuitOpenError extends BoundaryError {
       "provider",
       provider,
       false,
+      "",
       {
         reason: "circuit_breaker_open",
         nextAttempt: retryAfter?.toISOString() ?? "unknown",
@@ -23,7 +24,7 @@ export class CircuitOpenError extends BoundaryError {
     );
     this.name = "CircuitOpenError";
 
-    
+
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, CircuitOpenError);
     }
