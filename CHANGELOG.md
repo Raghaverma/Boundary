@@ -4,6 +4,18 @@ All notable changes to Meridian are documented here.
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **Built-in adapter auto-registration is now an externalizable bundle boundary.** The 46-entry `BUILTIN_ADAPTER_LOADERS` dispatch table moved out of `src/index.ts` (the `Meridian` class) into its own module, `src/builtin-adapters.ts`, reached from the class only through a dynamic `import()`. This directly addresses the v0.5.0 "Known limitation" below: because the table is no longer statically fused into the entry chunk a bundler traces from `import { Meridian }`, a bundle-conscious consumer who configures providers with **explicit adapter instances** (from the `meridianjs/providers/{category}` subpaths) can now drop *all* built-in adapters by marking `builtin-adapters` external (esbuild `external: ["*/builtin-adapters.js"]`, or the Rollup/webpack equivalents). Measured with an esbuild `--splitting` bundle of a Stripe-only consumer: **56 chunks / ~1.45 MB → 6 chunks**, the other 45 adapters gone. Previously there was no boundary to externalize — the table lived in `index.js`, which exports `Meridian` itself. **Zero-config usage is unchanged** on both Node and edge runtimes: `providers: { stripe: { auth } }` still resolves and lazily loads only the configured provider at runtime. See [docs/adapters.md](docs/adapters.md#bundling--tree-shaking).
+
+### Added
+
+- Regression tests (`src/builtin-adapters.test.ts`) that lock the tree-shaking invariant (the loader table must be reached from `Meridian` via a dynamic `import()`, never a static one) and assert parity between the lazy runtime loader table and the eager, test-only `ALL_ADAPTER_CLASSES` map — so a new provider added to one but not the other fails CI instead of going silently unroutable or untested.
+
+---
+
 ## [0.5.0] — 2026-06-28
 
 An engineering-hardening pass across performance, reliability, and security — no new provider adapters. See the priority order in the project roadmap; this release covers lazy-loading/tree-shaking, stricter TypeScript, mutation/property/fuzz testing, and several real bugs the new testing surfaced.
@@ -56,6 +68,8 @@ An engineering-hardening pass across performance, reliability, and security — 
 ### Known limitation (not fixed, documented for a future decision)
 
 - **Bundler tree-shaking can't reduce shipped bundle size for `Meridian`, even with the lazy-loading change above.** `BUILTIN_ADAPTER_LOADERS` (the dynamic-import dispatch table) lives in the same module as the `Meridian` class itself, so any bundler doing static analysis sees all 46 dynamic-import targets as reachable the moment `Meridian` is imported at all — regardless of which provider you actually configure, or whether you bypass auto-registration entirely by passing an explicit adapter instance. Confirmed with an esbuild `--splitting` bundle: 1.5MB / 46 chunks shipped either way. The Node-runtime win (confirmed via `benchmarks/startup.ts`) is real and unaffected — this only affects consumers who bundle Meridian for browser/edge shipping, which is not its primary use case (it's a Node backend reliability middleware). Fixing it for real would mean restructuring auto-registration so it's not statically reachable from `Meridian.create()` itself — a bigger API change than this pass made unilaterally.
+
+  **Update:** addressed in [Unreleased](#unreleased) above — the loader table was moved to its own dynamically-imported module, giving bundle-conscious consumers an `external` boundary to drop unused adapters, without the breaking change this note anticipated.
 
 ---
 

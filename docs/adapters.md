@@ -177,6 +177,57 @@ const response = await meridian.provider("my-custom-provider").get("/v1/items");
 
 ---
 
+## Bundling & tree-shaking
+
+Meridian is a Node backend reliability middleware, and on Node the built-in
+adapters already cost nothing until used: `import "meridianjs"` never eagerly
+loads any of the 46 provider modules, and configuring a provider lazily imports
+only that one at runtime. There is nothing to tune for the common case.
+
+If instead you **bundle** Meridian for an edge or browser runtime, you may want
+the shipped output to contain only the adapters you actually use. The built-in
+auto-registration table lives in its own module (`builtin-adapters`) that the
+`Meridian` class reaches only through a dynamic `import()`, so it is a single,
+externalizable boundary. To drop every built-in adapter from the bundle:
+
+1. Configure each provider with an **explicit adapter instance**, imported from
+   its category subpath — so the bundler sees exactly which adapters you use:
+
+   ```typescript
+   import { Meridian } from "meridianjs";
+   import { StripeAdapter } from "meridianjs/providers/payments";
+
+   const meridian = await Meridian.create({
+     localUnsafe: true,
+     providers: {
+       stripe: { auth: { apiKey: process.env.STRIPE_KEY }, adapter: new StripeAdapter() },
+     },
+   });
+   ```
+
+2. Mark the auto-registration module **external** so the bundler doesn't follow
+   the dynamic import (safe here — with explicit adapters the auto-registration
+   path is never taken at runtime):
+
+   ```js
+   // esbuild
+   { external: ["*/builtin-adapters.js"] }
+   // Rollup: external: [/builtin-adapters\.js$/]
+   // webpack: externals: [/[\\/]builtin-adapters\.js$/]
+   ```
+
+In an esbuild `--splitting` build, a Stripe-only consumer goes from **56 emitted
+chunks (~1.45 MB, all 46 adapters)** to **6 chunks** with the other 45 adapters
+gone. Without step 2 the bundler still emits every adapter as a lazy chunk,
+because a string-keyed loader table can't be statically narrowed to the one key
+you use — the `external` marker is what makes the reduction possible.
+
+> Do **not** mark `builtin-adapters` external if you rely on zero-config
+> resolution (`providers: { stripe: { auth } }` with no `adapter`): that path
+> loads the module at runtime and will fail if the bundler dropped it.
+
+---
+
 ## Verifying Your Adapter Against the Contract
 
 Adapters are just data sources — the resilience guarantees Meridian makes (error

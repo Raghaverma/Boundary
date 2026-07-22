@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Emits the canonical provider list as a single-line JSON array, derived from
-// the BUILTIN_ADAPTER_LOADERS registry in src/index.ts.
+// the BUILTIN_ADAPTER_LOADERS registry in src/builtin-adapters.ts.
 //
 // CI uses this to build the contract-test matrix dynamically, so the matrix can
 // never drift from the registry — add an adapter to the registry and it is
@@ -13,11 +13,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const src = readFileSync(join(root, "src", "index.ts"), "utf8");
+const src = readFileSync(join(root, "src", "builtin-adapters.ts"), "utf8");
 
 const block = src.match(/BUILTIN_ADAPTER_LOADERS[^{]*\{([\s\S]*?)\n\};/);
 if (!block) {
-  console.error("Could not locate BUILTIN_ADAPTER_LOADERS in src/index.ts");
+  console.error("Could not locate BUILTIN_ADAPTER_LOADERS in src/builtin-adapters.ts");
   process.exit(1);
 }
 

@@ -49,7 +49,7 @@ import { CleartaxAdapter } from "./tax/cleartax/adapter.js";
 /**
  * Eagerly-imported map of every built-in adapter class, keyed by provider
  * name. Test-only: production code resolves adapters lazily via
- * `BUILTIN_ADAPTER_LOADERS` in src/index.ts so that `import "meridianjs"`
+ * `BUILTIN_ADAPTER_LOADERS` in src/builtin-adapters.ts so that `import "meridianjs"`
  * doesn't pull in all 46 provider SDK clients. This module exists so
  * contract/parity tests can synchronously enumerate and instantiate every
  * adapter without paying that cost in the runtime entrypoint.
