@@ -216,7 +216,7 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/provider": "^3.0.10",
+    "@ai-sdk/provider": "^4.0.3",
     "@biomejs/biome": "^2.4.16",
     "@grpc/grpc-js": "^1.14.4",
     "@grpc/proto-loader": "^0.8.1",
@@ -225,11 +225,11 @@
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/node": "^26.0.0",
     "@vitest/coverage-v8": "^4.1.8",
-    "ai": "^6.0.208",
+    "ai": "^7.0.37",
     "esbuild": "^0.28.1",
     "fast-check": "^4.8.0",
     "typedoc": "^0.28.19",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.8"
   }
 }
